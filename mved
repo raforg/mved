@@ -1,198 +1,47 @@
-#!/usr/bin/perl -w
+#!/usr/bin/env perl
+$^W = 1;
 use strict;
 
+# mved - carefully rename multiple files
 #
-# mved - renames multiple files (see doco below)
+# Copyright (C) 1997-2003 raf <raf@raf.org>
 #
-# Released under the GPL http://www.gnu.org/copyleft/gpl.html
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
 #
-
-use Getopt::Std;
-
-my $name = 'mved';
-
-main:
-{
-	# check arguments
-
-	my %opt;
-	my $usage = "usage: $name [-nfqvdb#] src dst\n";
-	die $usage unless getopts('nfqvdb:', \%opt);
-	die $usage unless $#ARGV == 1;
-
-	my $src_glob = $ARGV[0];
-	my $dst_glob = $ARGV[1];
-	my $testing = exists $opt{n};
-	my $force = exists $opt{f};
-	my $quiet = exists $opt{q};
-	my $verbose = exists $opt{v} || exists $opt{d};
-	my $debug = exists $opt{d};
-	my $backwards = exists $opt{b} ? $opt{b} : 4;
-
-	print "$name: glob $src_glob $dst_glob\n" if $debug;
-
-	# construct a glob and get the list of matching files
-
-	$src_glob =~ s/=/*/g;
-	my @src = split /\n/, `/bin/ls -1 $src_glob 2>/dev/null`;
-	die "$name: No such file: $src_glob\n" if $#src == -1;
-
-	# translate src into a regular expression search
-
-	my $src_re = $src_glob;
-	my $unsloshed = '';
-	$unsloshed = "(?<!" . $unsloshed . "\\\\)" for 1 .. $backwards;
-	my $head = qr/(?:\^|!)/;
-	my $char = qr/(?:[^\]]|\\.)/;
-	my $body_part = qr/(?::\w+:|$char-$char|$char)/;
-	my $body = qr/$head?$body_part+/;
-	my $char_class = qr/$unsloshed\[$body$unsloshed\]/;
-	my $any_char = qr/$unsloshed\?/;
-	my $any_str = qr/$unsloshed(?:\*|=)/;
-	my $dot = qr/\./;
-	my $glob = qr/(?:$char_class|$any_str|$any_char|$dot)/;
-	my @rep;
-	unshift @rep, [$&, pos($src_re), length($&)] while $src_re =~ /$glob/g;
-	for my $rep (@rep)
-	{
-		substr($src_re, $rep->[1] - $rep->[2], $rep->[2], "($rep->[0])"), next if $rep->[0] =~ /^$char_class$/;
-		substr($src_re, $rep->[1] - $rep->[2], $rep->[2], "(.*)"), next if $rep->[0] =~ /^$any_str$/;
-		substr($src_re, $rep->[1] - $rep->[2], $rep->[2], "(.)"), next if $rep->[0] =~ /^$any_char$/;
-		substr($src_re, $rep->[1] - $rep->[2], $rep->[2], "\\."), next if $rep->[0] =~ /^$dot$/;
-		die "$name: parsing error\n";
-	}
-
-	$src_re =~ s/^/^/;
-	$src_re =~ s/$/\$/;
-
-	# translate dst into a regular expression replacement
-
-	my $dst_re = $dst_glob;
-	my $explicit_target = qr/$unsloshed=(\d+)=/;
-	my $implicit_target = qr/$unsloshed=(?!\d+=)/;
-
-	if ($dst_re =~ /$explicit_target/)
-	{
-		$dst_re =~ s/$explicit_target/\$$1/g;
-		die "Cannot mix implicit (=) and explicit (=1=) targets\n" if $dst_re =~ /$implicit_target/;
-	}
-	else
-	{
-		for (my $i = 1; $dst_re =~ /$implicit_target/; ++$i)
-		{
-			$dst_re =~ s/$implicit_target/\$$i/;
-		}
-	}
-
-	print "$name: re s/$src_re/$dst_re/\n" if $debug;
-
-	# construct the list of dst file names
-
-	my @dst;
-	my $old;
-	for $old (@src)
-	{
-		my $new = $old;
-		eval "\$new =~ s/$src_re/$dst_re/;";
-		push @dst, $new;
-	}
-
-	# must be ultra paranoid but helpful
-
-	my $help = "Use -n to check and then -f to force it iff you are certain";
-
-	my %dst_chk;
-	for (my $i = 0; $i <= $#dst; ++$i)
-	{
-		die "$name: Aborting: target $dst[$i] appears multiple times\n" if !$testing && !$force && exists $dst_chk{$dst[$i]};
-		$dst_chk{$dst[$i]} = $i;
-	}
-
-	for (my $i = 0; $i <= $#src; ++$i)
-	{
-		if (exists $dst_chk{$src[$i]})
-		{
-			my $j = $dst_chk{$src[$i]};
-
-			if ($i == $j)
-			{
-				print "$name: Skipping $src[$i]\n" unless $quiet;
-				splice @src, $i, 1;
-				splice @dst, $j, 1;
-				next;
-			}
-
-			die "$name: Aborting: Nervous about src[$i]: $src[$i] and dst[$j]: $dst[$j]\n$help\n"
-				unless $testing || $force;
-		}
-	}
-
-	for (my $i = 0; $i <= $#dst; ++$i)
-	{
-		die "$name: Aborting: $dst[$i] already exists\n$help\n"
-			if -e $dst[$i] && !$testing && !$force;
-	}
-
-	# if testing, print out corresponding mv commands then exit
-
-	if ($testing)
-	{
-		for (my $i = 0; $i <= $#src; ++$i)
-		{
-			print 'rm -f ', $dst[$i], ' (if forced)', "\n" if -e $dst[$i];
-			print 'mv ', $src[$i], ' ', $dst[$i], "\n";
-		}
-
-		exit(0);
-	}
-
-	# if forced, first unlink any existing destination files :[
-
-	if ($force)
-	{
-		for (my $i = 0; $i <= $#src; ++$i)
-		{
-			if (-e $dst[$i])
-			{
-				print "$name: Unlinking $dst[$i]\n" unless $quiet;
-				die "$name: Failed to unlink $dst[$i] ($!)\n" unless unlink $dst[$i];
-			}
-		}
-	}
-
-	# try to move all of the files
-
-	my $i;
-	for ($i = 0; $i <= $#src; ++$i)
-	{
-		print "mv $src[$i] $dst[$i]\n" if $verbose;
-		last unless link $src[$i], $dst[$i];
-	}
-
-	# if any failed, abandon and remove all destination files
-
-	if ($i != $#src + 1)
-	{
-		unlink @dst;
-		die "$name: Aborting: Failed to mv $src[$i] $dst[$i] ($!)\n";
-	}
-
-	# otherwise, remove the originals
-
-	unlink @src;
-
-	exit(0);
-}
-
-__END__
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+# or visit http://www.gnu.org/copyleft/gpl.html
+#
+# 20030901 raf <raf@raf.org>
 
 =head1 NAME
 
-I<mved> - renames multiple files
+I<mved> - carefully rename multiple files
 
 =head1 SYNOPSIS
 
-C<mved [-nfqvdb#] source target>
+ usage: mved [options] src dst
+ options:
+
+   -h   - Print the help message then exit
+   -m   - Print the manpage then exit
+   -w   - Print the manpage in html format then exit
+   -r   - Print the manpage in nroff format then exit
+   -n   - Don't rename anything. Just print commands
+   -f   - Force dangerous actions (Check with -n first!)
+   -q   - Don't print skipping or unlinking messages
+   -v   - Print equivalent mv commands (implied by -d)
+   -d   - Print debugging messages
+   -b # - Set depth of quote characters to check (default 4)
 
 =head1 DESCRIPTION
 
@@ -230,6 +79,30 @@ C<-q> quiet option is supplied.
 =head1 OPTIONS
 
 =over 4
+
+=item C<-h>
+
+Print the help message then exit.
+
+=item C<-m>
+
+Print the manpage then exit. This is equivalent to executing C<man mved>
+but this works even when the manpage isn't installed properly.
+
+=item C<-w>
+
+Print the manpage in html format then exit. This lets you install the
+manpage in html format with a command like:
+
+  mkdir -p /usr/local/share/doc/mved/html &&
+  mved -w > /usr/local/share/doc/mved/html/mved.1.html
+
+=item C<-r>
+
+Print the manpage in nroff format then exit. This lets you install the
+manpage properly with a command like:
+
+  mved -r > /usr/local/share/man/man1/mved.1
 
 =item C<-n>
 
@@ -318,9 +191,18 @@ failure, no files will have been renamed.
 =head1 BUGS
 
 Hard links are used so it is impossible to I<mved> files from one file
-system to another. Use I<mv> for this. There are probably other bugs and
-they will probably cost files. My advice is to always use C<-n> first,
-never use C<-f>, and keep backups :)
+system to another. Use I<mv> for this. Then rename with I<mved>.
+
+Doesn't handle patterns containing pipe C<'|'> characters because this
+character is used as the regular expression separator.
+
+Presumably, there are as yet unknown bugs and they will presumably cost
+files. My advice is to always use C<-n> first, never use C<-f>, and always
+keep backups.
+
+=head1 COPYING
+
+Released under the terms of the GPL (http://www.gnu.org/copyleft/gpl.html)
 
 =head1 HISTORY
 
@@ -330,14 +212,258 @@ seen it since.
 
 =head1 SEE ALSO
 
-L<link(2)>, L<unlink(2)>, L<mv(1)>, L<rm(1)>
+I<link(2)>, I<unlink(2)>, I<mv(1)>, I<rm(1)>
 
 =head1 AUTHOR
 
-raf <raf2@zip.com.au>
+20030901 raf <raf@raf.org>
 
-Sat Jul 12 21:34:42 GMT+10 1997
+=head1 URL
+
+C<http://raf.org/mved/>
 
 =cut
 
-# vi:set ts=4 sw=4
+my ($name) = $0 =~ /([^\/]+)$/;
+
+sub help
+{
+	print
+		"usage: $name [options] src dst\n",
+		"options:\n",
+		"  -h   - Print the help message then exit\n",
+		"  -m   - Print the manpage then exit\n",
+		"  -w   - Print the manpage in html format then exit\n",
+		"  -r   - Print the manpage in nroff format then exit\n",
+		"  -n   - Don't rename anything. Just print commands\n",
+		"  -f   - Force dangerous actions (Check with -n first!)\n",
+		"  -q   - Don't print skipping or unlinking messages\n",
+		"  -v   - Print equivalent mv commands (implied by -d)\n",
+		"  -d   - Print debugging messages\n",
+		"  -b # - Set depth of quote characters to check (default 4)\n",
+		"\n";
+	exit;
+}
+
+sub man
+{
+	my $noquotes = (`pod2man -h 2>&1` =~ /--quotes=/) ? '--quotes=none' : '';
+	system "pod2man $noquotes $0 | nroff -man | " . ($ENV{PAGER} || 'more');
+	exit;
+}
+
+sub nroff
+{
+	my $noquotes = (`pod2man -h 2>&1` =~ /--quotes=/) ? '--quotes=none' : '';
+	system "pod2man $noquotes $0";
+	exit;
+}
+
+sub html
+{
+	system "pod2html --noindex $0";
+	unlink 'pod2html-dircache', 'pod2html-itemcache';
+	exit;
+}
+
+my %opt;
+use Getopt::Std;
+help() unless getopts('hmwrnfqvdb:', \%opt);
+help() if exists $opt{h};
+man() if exists $opt{m};
+nroff() if exists $opt{r};
+html() if exists $opt{w};
+help() unless $#ARGV == 1;
+
+my $src_glob = $ARGV[0];
+my $dst_glob = $ARGV[1];
+my $testing = exists $opt{n};
+my $force = exists $opt{f};
+my $quiet = exists $opt{q};
+my $verbose = exists $opt{v} || exists $opt{d};
+my $debug = exists $opt{d};
+my $backwards = exists $opt{b} ? $opt{b} : 4;
+
+print "$name: glob $src_glob $dst_glob\n" if $debug;
+
+# construct a glob and get the list of matching files
+
+$src_glob =~ s/=/*/g;
+my @src = glob($src_glob);
+die "$name: No such file: $src_glob\n" if $#src == -1;
+
+# translate src into a regular expression search
+
+my $src_re = $src_glob;
+my $unsloshed = '';
+$unsloshed = "(?<!" . $unsloshed . "\\\\)" for 1 .. $backwards;
+my $head = qr/(?:\^|!)/;
+my $char = qr/(?:[^\]]|\\.)/;
+my $body_part = qr/(?::\w+:|$char-$char|$char)/;
+my $body = qr/$head?$body_part+/;
+my $char_class = qr/$unsloshed\[$body$unsloshed\]/;
+my $any_char = qr/$unsloshed\?/;
+my $any_str = qr/$unsloshed(?:\*|=)/;
+my $dot = qr/\./;
+my $glob = qr/(?:$char_class|$any_str|$any_char|$dot)/;
+my @rep;
+unshift @rep, [$&, pos($src_re), length($&)] while $src_re =~ /$glob/g;
+for my $rep (@rep)
+{
+	substr($src_re, $rep->[1] - $rep->[2], $rep->[2], "($rep->[0])"), next if $rep->[0] =~ /^$char_class$/;
+	substr($src_re, $rep->[1] - $rep->[2], $rep->[2], "(.*)"), next if $rep->[0] =~ /^$any_str$/;
+	substr($src_re, $rep->[1] - $rep->[2], $rep->[2], "(.)"), next if $rep->[0] =~ /^$any_char$/;
+	substr($src_re, $rep->[1] - $rep->[2], $rep->[2], "\\."), next if $rep->[0] =~ /^$dot$/;
+	die "$name: parsing error\n";
+}
+
+$src_re =~ s/^/^/;
+$src_re =~ s/$/\$/;
+
+# translate dst into a regular expression replacement
+
+my $dst_re = $dst_glob;
+my $explicit_target = qr/$unsloshed=(\d+)=/;
+my $implicit_target = qr/$unsloshed=(?!\d+=)/;
+
+if ($dst_re =~ /$explicit_target/)
+{
+	$dst_re =~ s/$explicit_target/\$$1/g;
+	die "Cannot mix implicit (=) and explicit (=1=) targets\n" if $dst_re =~ /$implicit_target/;
+}
+else
+{
+	for (my $i = 1; $dst_re =~ /$implicit_target/; ++$i)
+	{
+		$dst_re =~ s/$implicit_target/\$$i/;
+	}
+}
+
+print "$name: re s|$src_re|$dst_re|\n" if $debug;
+die "pattern contains '|'\n" if $src_re =~ /\|/ || $dst_re =~ /\|/;
+
+# construct the list of dst file names
+
+my @dst;
+my $old;
+for $old (@src)
+{
+	my $new = $old;
+	print "$name: src_re = $src_re\n" if $debug;
+	print "$name: dst_re = $dst_re\n" if $debug;
+	eval "\$new =~ s|$src_re|$dst_re|;";
+	push @dst, $new;
+}
+
+# must be ultra paranoid but helpful
+
+my $help = "Use -n to check and then -f to force it iff you are certain";
+
+my %dst_chk;
+for (my $i = 0; $i <= $#dst; ++$i)
+{
+	die "$name: Aborting: target $dst[$i] appears multiple times\n" if !$testing && !$force && exists $dst_chk{$dst[$i]};
+	$dst_chk{$dst[$i]} = $i;
+}
+
+for (my $i = 0; $i <= $#src; ++$i)
+{
+	if (exists $dst_chk{$src[$i]})
+	{
+		my $j = $dst_chk{$src[$i]};
+
+		if ($i == $j)
+		{
+			print "$name: Skipping $src[$i]\n" unless $quiet;
+			splice @src, $i, 1;
+			splice @dst, $j, 1;
+			next;
+		}
+
+		die "$name: Aborting: Nervous about src[$i]: $src[$i] and dst[$j]: $dst[$j]\n$help\n"
+			unless $testing || $force;
+	}
+}
+
+for (my $i = 0; $i <= $#dst; ++$i)
+{
+	die "$name: Aborting: $dst[$i] already exists\n$help\n"
+		if -e $dst[$i] && !$testing && !$force;
+}
+
+# if testing, print out corresponding mv commands then exit
+
+if ($testing)
+{
+	for (my $i = 0; $i <= $#src; ++$i)
+	{
+		my $r = (-d $dst[$i]) ? 'r' : '';
+		print "rm -${r}f ", $dst[$i], ' (if forced)', "\n" if -e $dst[$i];
+		print 'mv ', $src[$i], ' ', $dst[$i], "\n";
+	}
+
+	exit(0);
+}
+
+# if forced, first unlink any existing destination files :[
+
+if ($force)
+{
+	for (my $i = 0; $i <= $#src; ++$i)
+	{
+		if (-d $dst[$i])
+		{
+			print "$name: Removing directory $dst[$i]\n" unless $quiet;
+			rmdir $dst[$i] or die "$name: Failed to remove directory $dst[$i] ($!)\n";
+		}
+		elsif (-e $dst[$i])
+		{
+			print "$name: Unlinking $dst[$i]\n" unless $quiet;
+			unlink $dst[$i] or die "$name: Failed to unlink $dst[$i] ($!)\n";
+		}
+	}
+}
+
+# try to move all of the files
+
+my $i;
+for ($i = 0; $i <= $#src; ++$i)
+{
+	print "mv $src[$i] $dst[$i]\n" if $verbose;
+
+	if (-d $src[$i])
+	{
+		rename $src[$i], $dst[$i] or last;
+	}
+	else
+	{
+		link $src[$i], $dst[$i] or last;
+	}
+}
+
+# if any failed, abandon and remove all destination files
+
+if ($i != $#src + 1)
+{
+	for ($i = 0; $i <= $#src; ++$i)
+	{
+		if (-d $dst[$i])
+		{
+			rename $dst[$i], $src[$i];
+		}
+		elsif (-e $dst[$i])
+		{
+			unlink $dst[$i];
+		}
+	}
+
+	die "$name: Aborting: Failed to mv $src[$i] $dst[$i] ($!)\n";
+}
+
+# otherwise, remove the originals
+
+unlink @src;
+
+exit;
+
+# vi:set ts=4 sw=4:
