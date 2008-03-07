@@ -4,7 +4,7 @@ use strict;
 
 # mved - carefully rename multiple files
 #
-# Copyright (C) 1997-2006 raf <raf@raf.org>
+# Copyright (C) 1997-2008 raf <raf@raf.org>
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -21,7 +21,7 @@ use strict;
 # Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 # or visit http://www.gnu.org/copyleft/gpl.html
 #
-# 20060124 raf <raf@raf.org>
+# 20080307 raf <raf@raf.org>
 
 =head1 NAME
 
@@ -54,9 +54,9 @@ globbing constructs are used, they must be quoted to prevent the shell from
 performing filename expansion. This is not necessary when the only construct
 used is C<=>. There are two styles of C<dst> argument. One allows C<=> to
 represent the text matching the (positionally) corresponding glob construct
-in the C<src> argument. The other allows C<=#=> (where C<#> is an integer)
-to represent the text matching the C<#-th> glob construct in the C<src>
-argument. The two styles cannot be mixed.
+in the C<src> argument. The other allows C<=#=> (where C<#> is an integer
+from 1 to 9) to represent the text matching the C<#-th> glob construct in
+the C<src> argument. The two styles cannot be mixed.
 
 I<mved> creates new links to the existing files. If the C<-v> verbose option
 is supplied, the corresponding I<mv> commands are printed. If any of them
@@ -215,7 +215,7 @@ I<link(2)>, I<unlink(2)>, I<mv(1)>, I<rm(1)>
 
 =head1 AUTHOR
 
-20060124 raf <raf@raf.org>
+20080307 raf <raf@raf.org>
 
 =head1 URL
 
@@ -282,12 +282,12 @@ my $verbose = exists $opt{v} || exists $opt{d};
 my $debug = exists $opt{d};
 my $backwards = exists $opt{b} ? $opt{b} : 4;
 
-print "$name: glob $src_glob $dst_glob\n" if $debug;
+print "$name: src glob <$src_glob> dst glob <$dst_glob>\n" if $debug;
 
 # Construct a glob and get the list of matching files
 
 $src_glob =~ s/=/*/g;
-my @src = glob $src_glob ;
+my @src = glob '"' . $src_glob . '"';
 die "$name: No such file: $src_glob\n" unless @src;
 
 # Translate src into a regular expression search
@@ -321,19 +321,19 @@ $src_re =~ s/$/\$/;
 # Translate dst into a regular expression replacement
 
 my $dst_re = $dst_glob;
-my $explicit_target = qr/$unsloshed=(\d+)=/;
-my $implicit_target = qr/$unsloshed=(?!\d+=)/;
+my $explicit_target = qr/$unsloshed=(\d)=/;
+my $implicit_target = qr/$unsloshed=(?!\d=)/;
 
 if ($dst_re =~ /$explicit_target/)
 {
-	$dst_re =~ s/$explicit_target/\$$1/g;
+	$dst_re =~ s/$explicit_target/\$\{$1\}/g;
 	die "Cannot mix implicit (=) and explicit (=1=) targets\n" if $dst_re =~ /$implicit_target/;
 }
 else
 {
 	for (my $i = 1; $dst_re =~ /$implicit_target/; ++$i)
 	{
-		$dst_re =~ s/$implicit_target/\$$i/;
+		$dst_re =~ s/$implicit_target/\$\{$i\}/;
 	}
 }
 
@@ -396,8 +396,8 @@ if ($testing)
 	for (my $i = 0; $i < @src; ++$i)
 	{
 		my $r = (-d $dst[$i]) ? 'r' : '';
-		print "rm -${r}f ", $dst[$i], ' (if forced)', "\n" if -e $dst[$i];
-		print 'mv ', $src[$i], ' ', $dst[$i], "\n";
+		print "rm -${r}f ", qu($dst[$i]), ' (if forced)', "\n" if -e $dst[$i];
+		print 'mv ', qu($src[$i]), ' ', qu($dst[$i]), "\n";
 	}
 
 	exit;
@@ -427,7 +427,7 @@ if ($force)
 my $i;
 for ($i = 0; $i < @src; ++$i)
 {
-	print "mv $src[$i] $dst[$i]\n" if $verbose;
+	print "mv ", qu($src[$i]), ' ', qu($dst[$i]), "\n" if $verbose;
 
 	if (-d $src[$i])
 	{
@@ -461,5 +461,15 @@ if ($i != @src)
 # Otherwise, remove the originals
 
 unlink @src;
+
+# Quote the argument if it contains spaces or double quotes
+
+sub qu
+{
+	my $s = shift;
+	return $s unless $s =~ /[ "]/;
+	$s =~ s/"/\\"/;
+	return "\"$s\"";
+}
 
 # vi:set ts=4 sw=4:
