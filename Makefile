@@ -3,8 +3,8 @@ bindir := $(prefix)/bin
 mandir := $(shell [ -d $(prefix)/share/man ] && echo $(prefix)/share/man || echo $(prefix)/man)
 
 name := mved
-version := 2.0
-date := 20080307
+version := 2.1
+date := 20091105
 
 install:
 	@set -e; \

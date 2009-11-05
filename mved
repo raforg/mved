@@ -4,7 +4,7 @@ use strict;
 
 # mved - carefully rename multiple files
 #
-# Copyright (C) 1997-2008 raf <raf@raf.org>
+# Copyright (C) 1997-2009 raf <raf@raf.org>
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -21,7 +21,7 @@ use strict;
 # Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 # or visit http://www.gnu.org/copyleft/gpl.html
 #
-# 20080307 raf <raf@raf.org>
+# 20091105 raf <raf@raf.org>
 
 =head1 NAME
 
@@ -215,7 +215,7 @@ I<link(2)>, I<unlink(2)>, I<mv(1)>, I<rm(1)>
 
 =head1 AUTHOR
 
-20080307 raf <raf@raf.org>
+20091105 raf <raf@raf.org>
 
 =head1 URL
 
@@ -287,7 +287,16 @@ print "$name: src glob <$src_glob> dst glob <$dst_glob>\n" if $debug;
 # Construct a glob and get the list of matching files
 
 $src_glob =~ s/=/*/g;
-my @src = glob '"' . $src_glob . '"';
+my @src;
+if ($src_glob =~ / /)
+{
+	@src = glob '"' . $src_glob . '"';
+}
+else
+{
+	@src = glob $src_glob;
+}
+#my @src = glob $src_glob;
 die "$name: No such file: $src_glob\n" unless @src;
 
 # Translate src into a regular expression search
