@@ -4,7 +4,7 @@ use strict;
 
 # mved - carefully rename multiple files
 #
-# Copyright (C) 1997-2009 raf <raf@raf.org>
+# Copyright (C) 1997-2011 raf <raf@raf.org>
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -21,7 +21,7 @@ use strict;
 # Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 # or visit http://www.gnu.org/copyleft/gpl.html
 #
-# 20091105 raf <raf@raf.org>
+# 20111027 raf <raf@raf.org>
 
 =head1 NAME
 
@@ -211,11 +211,11 @@ since.
 
 =head1 SEE ALSO
 
-I<link(2)>, I<unlink(2)>, I<mv(1)>, I<rm(1)>
+I<link(2)>, I<unlink(2)>, I<mv(1)>, I<rm(1)>, I<rename(1)>
 
 =head1 AUTHOR
 
-20091105 raf <raf@raf.org>
+20111027 raf <raf@raf.org>
 
 =head1 URL
 
@@ -287,16 +287,9 @@ print "$name: src glob <$src_glob> dst glob <$dst_glob>\n" if $debug;
 # Construct a glob and get the list of matching files
 
 $src_glob =~ s/=/*/g;
-my @src;
-if ($src_glob =~ / /)
-{
-	@src = glob '"' . $src_glob . '"';
-}
-else
-{
-	@src = glob $src_glob;
-}
-#my @src = glob $src_glob;
+# Quotes in glob when no spaces doesn't match anything
+# but quotes are needed for globs that contain spaces. Wierd.
+my @src = glob(($src_glob =~ /\s/) ? '"' . $src_glob . '"' : $src_glob);
 die "$name: No such file: $src_glob\n" unless @src;
 
 # Translate src into a regular expression search
@@ -321,7 +314,7 @@ for my $rep (@rep)
 	substr($src_re, $rep->[1] - $rep->[2], $rep->[2], "(.*)"), next if $rep->[0] =~ /^$any_str$/;
 	substr($src_re, $rep->[1] - $rep->[2], $rep->[2], "(.)"), next if $rep->[0] =~ /^$any_char$/;
 	substr($src_re, $rep->[1] - $rep->[2], $rep->[2], "\\."), next if $rep->[0] =~ /^$dot$/;
-	die "$name: parsing error\n";
+	die "$name: Parsing error\n";
 }
 
 $src_re =~ s/^/^/;
@@ -336,7 +329,7 @@ my $implicit_target = qr/$unsloshed=(?!\d=)/;
 if ($dst_re =~ /$explicit_target/)
 {
 	$dst_re =~ s/$explicit_target/\$\{$1\}/g;
-	die "Cannot mix implicit (=) and explicit (=1=) targets\n" if $dst_re =~ /$implicit_target/;
+	die "$name: Cannot mix implicit (=) and explicit (=1=) targets\n" if $dst_re =~ /$implicit_target/;
 }
 else
 {
@@ -347,18 +340,19 @@ else
 }
 
 print "$name: re s|$src_re|$dst_re|\n" if $debug;
-die "pattern contains '|'\n" if $src_re =~ /\|/ || $dst_re =~ /\|/;
+die "$name: Pattern contains '|'\n" if $src_re =~ /\|/ || $dst_re =~ /\|/;
 
 # Construct the list of dst file names
 
 my @dst;
-my $old;
-for $old (@src)
+for my $old (@src)
 {
 	my $new = $old;
 	print "$name: src_re = $src_re\n" if $debug;
 	print "$name: dst_re = $dst_re\n" if $debug;
 	eval "\$new =~ s|$src_re|$dst_re|;";
+	print "$name: src <$old>\n" if $debug;
+	print "$name: dst <$new>\n" if $debug;
 	push @dst, $new;
 }
 
@@ -369,7 +363,7 @@ my $help = "Use -n to check and then -f to force it iff you are certain";
 my %dst_chk;
 for (my $i = 0; $i < @dst; ++$i)
 {
-	die "$name: Aborting: target $dst[$i] appears multiple times\n" if !$testing && !$force && exists $dst_chk{$dst[$i]};
+	die "$name: Aborting: Target $dst[$i] appears multiple times\n" if !$testing && !$force && exists $dst_chk{$dst[$i]};
 	$dst_chk{$dst[$i]} = $i;
 }
 
@@ -421,12 +415,13 @@ if ($force)
 		if (-d $dst[$i])
 		{
 			print "$name: Removing directory $dst[$i]\n" unless $quiet;
-			rmdir $dst[$i] or die "$name: Failed to remove directory $dst[$i] ($!)\n";
+			rm($dst[$i]) or die "$name: Failed to remove directory $dst[$i]: $!\n";
+			-d $dst[$i] && die "$name: Failed to remove directory $dst[$i]: $!\n";
 		}
 		elsif (-e $dst[$i])
 		{
 			print "$name: Unlinking $dst[$i]\n" unless $quiet;
-			unlink $dst[$i] or die "$name: Failed to unlink $dst[$i] ($!)\n";
+			unlink $dst[$i] or die "$name: Failed to unlink $dst[$i]: $!\n";
 		}
 	}
 }
@@ -440,11 +435,11 @@ for ($i = 0; $i < @src; ++$i)
 
 	if (-d $src[$i])
 	{
-		rename $src[$i], $dst[$i] or last;
+		rename $src[$i], $dst[$i] or warn("$name: Failed to rename $src[$i] $dst[$i]: $!\n"), last;
 	}
 	else
 	{
-		link $src[$i], $dst[$i] or last;
+		link $src[$i], $dst[$i] or warn("$name: Failed to link $src[$i] $dst[$i]: $!\n"), last;
 	}
 }
 
@@ -452,33 +447,51 @@ for ($i = 0; $i < @src; ++$i)
 
 if ($i != @src)
 {
-	for ($i = 0; $i < @src; ++$i)
+	warn("$name: Reverting changes\n") if $i;
+
+	while (--$i >= 0)
 	{
+		print "mv ", qu($dst[$i]), ' ', qu($src[$i]), "\n" unless $quiet;
+
 		if (-d $dst[$i])
 		{
-			rename $dst[$i], $src[$i];
+			rename $dst[$i], $src[$i] or warn "$name: Failed to rename $dst[$i] $src[$i]: $!\n";
 		}
 		elsif (-e $dst[$i])
 		{
-			unlink $dst[$i];
+			unlink $dst[$i] or warn "$name: Failed to unlink $dst[$i]: $!\n";
 		}
 	}
 
-	die "$name: Aborting: Failed to mv $src[$i] $dst[$i] ($!)\n";
+	die "$name: Aborted\n";
 }
 
 # Otherwise, remove the originals
 
-unlink @src;
+unlink or warn "$name: Failed to unlink $_: $!\n" for grep { -e && ! -d } @src;
 
 # Quote the argument if it contains spaces or double quotes
 
 sub qu
 {
 	my $s = shift;
-	return $s unless $s =~ /[ "]/;
-	$s =~ s/"/\\"/;
-	return "\"$s\"";
+	# Return the string as is if it contains no spaces or quote characters
+	return $s unless $s =~ /[ '"]/;
+	# Quote with double quotes if it contains apostrophes (and backslash existing double quotes)
+	$s =~ s/"/\\"/g, return "\"$s\"" if $s =~ /'/;
+	# Quote with single quotes otherwise
+	return "'$s'";
+}
+
+# Removes the files and directories given as arguments, returns number removed
+# usage: my $unlinked = rm(@files);
+
+sub rm
+{
+	my $rc = 0;
+	$rc += rm(glob "$_/*"), $rc += rmdir $_ for grep { -d } @_;
+	$rc += unlink grep { ! -d } @_;
+	return $rc;
 }
 
 # vi:set ts=4 sw=4:
