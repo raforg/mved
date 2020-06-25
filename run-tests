@@ -1,0 +1,1495 @@
+#!/usr/bin/env perl
+use warnings;
+use strict;
+
+# mved - carefully rename multiple files and directories
+#
+# Copyright (C) 1997, 2003, 2006, 2008-2009, 2011, 2020 raf <raf@raf.org>
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, see <https://www.gnu.org/licenses/>.
+#
+# 20200625 raf <raf@raf.org>
+
+# Test mved
+
+my $mved = './mved';
+my $env = '';
+my $opts = '';
+my $testi = 'test.i';
+my $testo = 'test.o';
+my $num_tests = 0;
+my $num_failures = 0;
+
+# Return "$env $mved $opts"
+
+sub mved_cmd
+{
+	return join(' ', grep { $_ } ($env, $mved, $opts));
+}
+
+# Single quote arguments
+
+sub qu
+{
+	my $s = shift;
+	$s =~ s/'/'"'"'/g;
+	return "'$s'";
+}
+
+# Run a shell command, return 0 on success, or 1 on failure
+
+sub sh
+{
+	my $cmd = shift;
+	return (system($cmd) == 0) ? 0 : 1;
+}
+
+# Create an empty file
+
+sub touch
+{
+	my ($fname) = @_;
+	open F, '>', $fname or return 0;
+	close F;
+	return 1;
+}
+
+# Return the contents of a file
+
+sub cat
+{
+	my $fname = shift;
+	open F, '<', $fname or warn "Failed to open $fname for reading: $!\n";
+	local $/;
+	my $input = <F>;
+	close F;
+	return $input;
+}
+
+# Create a test directory containing test files
+
+sub setup
+{
+	my ($dir, $files, $setup_hook) = @_;
+	mkdir($dir) or die "$0: Failed to mkdir $dir: $!\n";
+	mkdir("$dir/bak") or die "$0: Failed to mkdir $dir/bak: $!\n";
+	mkdir("$dir/New Folder") or die "$0: Failed to mkdir \"$dir/New Folder\": $!\n";
+	mkdir("$dir/" . substr($_, 0, -1)) or die "$0: Failed to mkdir @{[qu(\"$dir/$_\")]}: $!\n" for grep { /\/$/ } @$files;
+	touch("$dir/$_") or die "$0: Failed to touch @{[qu(\"$dir/$_\")]}: $!\n" for grep { !/\/$/ } @$files;
+	&$setup_hook($dir) if defined $setup_hook;
+}
+
+# Delete a test directory
+
+sub teardown
+{
+	my ($dir, $teardown_hook) = @_;
+	&$teardown_hook($dir) if defined $teardown_hook;
+	sh "rm -rf $dir";
+}
+
+# Run mved and report unexpected results (exit status, stdout, stderr)
+
+sub mved
+{
+	my ($src, $dst, $rc, $stdout, $stderr) = @_;
+	$stdout //= ''; $stderr //= '';
+	my $out = "/tmp/mved.tst.$$.out";
+	my $err = "/tmp/mved.tst.$$.err";
+	my $actual_rc = sh "@{[mved_cmd]} @{[qu(\"$testi/$src\")]} @{[qu(\"$testi/$dst\")]} >$out 2>$err";
+	my $actual_out = cat($out);
+	my $actual_err = cat($err);
+	unlink $out, $err;
+	return ($actual_rc, $actual_out, $actual_err);
+}
+
+# Run a test
+# usage: test($src_glob, $dst_glob, [@src_files], [@dst_files], $rc, $stdout, $stderr);
+# $src_glob and $dst_glob pass via /bin/sh, @src_files and @dst_files do not.
+# $rc, $stdout and $stderr are optional - They default to 0, '' and '', respectively
+
+sub test
+{
+	my $desc = shift;
+	my $test_opts = shift;
+	my $test_env = shift;
+	my $src_glob = shift;
+	my $dst_glob = shift;
+	my $src_files = shift;
+	my $dst_files = shift;
+	my $rc = shift // 0;
+	my $stdout = shift // '';
+	my $stderr = shift // '';
+	my $setup_ihook = shift;
+	my $setup_ohook = shift;
+	my $teardown_ihook = shift;
+	my $teardown_ohook = shift;
+	$opts = $test_opts;
+	$env = $test_env;
+	++$num_tests;
+	print($desc, "\n");
+	setup($testi, $src_files, $setup_ihook);
+	setup($testo, $dst_files, $setup_ohook);
+	my ($actual_rc, $actual_out, $actual_err) = mved($src_glob, $dst_glob, $rc, $stdout, $stderr);
+	++$num_failures, print "@{[mved_cmd]} @{[qu($src_glob)]} @{[qu($dst_glob)]}\n" if $actual_rc ne $rc || $actual_out ne $stdout || $actual_err ne $stderr;
+	print("Expected rc: $rc\nActual rc:   $actual_rc\n") if $actual_rc ne $rc;
+	print("Expected stdout:\n${stdout}Actual stdout:\n$actual_out") if $actual_out ne $stdout;
+	print("Expected stderr:\n${stderr}Actual stderr:\n$actual_err") if $actual_err ne $stderr;
+	my $diff_rc = sh "diff -durp $testi $testo";
+	sh "ls -lasp $testi $testo" if $diff_rc;
+	teardown($testi, $teardown_ihook);
+	teardown($testo, $teardown_ohook);
+}
+
+# Start testing
+
+system "rm -rf $testi $testo";
+
+# Test all the examples from the manpage
+
+test
+(
+	'Example test: mved =.c~ bak/=.c.bak (one = in src)',
+	'', '', '=.c~', 'bak/=.c.bak',
+	[qw(a.c~        b.c~        c.c~        other)],
+	[qw(bak/a.c.bak bak/b.c.bak bak/c.c.bak other)]
+);
+
+test
+(
+	'Example test: mved \'*.[ch]\' save-=.= (* and [] in src)',
+	'', '', '*.[ch]', 'save-=.=',
+	[qw(a.c      a.h      b.c      b.h      other)],
+	[qw(save-a.c save-a.h save-b.c save-b.h other)]
+);
+
+test
+(
+	'Example test: mved save-=.= =.= (two = in src)',
+	'', '', 'save-=.=', '=.=',
+	[qw(save-a.c save-a.o save-b.c save-b.o other)],
+	[qw(a.c      a.o      b.c      b.o      other)]
+);
+
+test
+(
+	'Example test: mved note= note=.txt (one = in src)',
+	'', '', 'note=', 'note=.txt',
+	[qw(note1     note2     note3     other)],
+	[qw(note1.txt note2.txt note3.txt other)]
+);
+
+test
+(
+	'Example test: \'[0-9][0-9][0-9][0-9][0-9][0-9]*\' 19=5==6=-=3==4=-=1==2==7= (explicit =#= in dst)',
+	'', '', '[0-9][0-9][0-9][0-9][0-9][0-9]*', '19=5==6=-=3==4=-=1==2==7=',
+	[qw(191299-app.log     211299-app.log     251299-app.log     281299-app.log     other)],
+	[qw(1999-12-19-app.log 1999-12-21-app.log 1999-12-25-app.log 1999-12-28-app.log other)]
+);
+
+test
+(
+	'Example test: \'{abc,def}.*\' =-v2.= ({,} and * in src)',
+	'', '', '{abc,def}.*', '=-v2.=',
+	[qw(abc.txt    def.txt    ghi.txt other)],
+	[qw(abc-v2.txt def-v2.txt ghi.txt other)]
+);
+
+# Test file/directory names
+
+test
+(
+	'Name test: dotfiles (excluded)',
+	'', '', 'abc*', 'def=',
+	['abc', 'abc1', '.abc2', '.abc3', 'other'],
+	['def', 'def1', '.abc2', '.abc3', 'other']
+);
+
+test
+(
+	'Name test: dotfiles (only)',
+	'', '', '.abc*', 'def=',
+	['abc', 'abc1', '.abc2', '.abc3', 'other'],
+	['abc', 'abc1', 'def2',  'def3',  'other']
+);
+
+test
+(
+	'Name test: spaces in directory name',
+	'', '', 'New Folder/*.c', 'New Folder/=.c.bak',
+	['New Folder/a.c',     'New Folder/a.c',     'New Folder/a.c'],
+	['New Folder/a.c.bak', 'New Folder/a.c.bak', 'New Folder/a.c.bak'],
+);
+
+test
+(
+	'Name test: spaces in file name',
+	'', '', '*.c', '=.c.bak',
+	['a 1.c',     'b 2.c',     'c 3.c'],
+	['a 1.c.bak', 'b 2.c.bak', 'c 3.c.bak'],
+);
+
+test
+(
+	'Name test: spaces in both',
+	'', '', 'New Folder/*.c', 'New Folder/=.c.bak',
+	['New Folder/a 1.c',     'New Folder/b 2.c',     'New Folder/c 3.c'],
+	['New Folder/a 1.c.bak', 'New Folder/b 2.c.bak', 'New Folder/c 3.c.bak'],
+);
+
+test
+(
+	'Name test: spaces in src glob',
+	'', '', '* ?.c', '=.c.bak',
+	['a 1.c',   'b 2.c',   'c 3.c'],
+	['a.c.bak', 'b.c.bak', 'c.c.bak'],
+);
+
+test
+(
+	'Name test: spaces in dst glob',
+	'', '', '*.c', '= c.bak',
+	['a 1.c',     'b 2.c',     'c 3.c'],
+	['a 1 c.bak', 'b 2 c.bak', 'c 3 c.bak'],
+);
+
+test
+(
+	'Name test: spaces in both src and dst glob',
+	'', '', '* ?.c', '= c.bak',
+	['a 1.c',   'b 2.c',   'c 3.c'],
+	['a c.bak', 'b c.bak', 'c c.bak'],
+);
+
+# Test translation from glob patterns to regular expressions
+
+# in:  =.c
+# out: (.*)\.c
+
+test
+(
+	'Regexp test: =.c becomes (.*)\\.c',
+	'', '', '=.c', '=',
+	['a.c', 'a.cc', 'a_c', ' .c', '"blah blah".c', '.c', 'other'],
+	['a',   'a.cc', 'a_c', ' ',   '"blah blah"',   '.c', 'other']
+
+);
+
+# in:  abc
+# out: abc
+
+test
+(
+	'Regexp test: abc becomes ^abc$',
+	'', '', 'abc', 'def',
+	['abc', 'aabc', 'abcd', 'other'],
+	['def', 'aabc', 'abcd', 'other']
+);
+
+# in:  abc*
+# out: abc(.*)
+
+test
+(
+	'Regexp test: abc* becomes ^abc(.*)$',
+	'', '', 'abc*', 'def=',
+	['abcdef', 'aabcdef', "abc '\"", 'other'],
+	['defdef', 'aabcdef', "def '\"", 'other']
+);
+
+# in:  *abc
+# out: (.*)abc
+
+test
+(
+	'Regexp test: *abc becomes ^(.*)abc$',
+	'', '', '*abc', '=def',
+	['defabc', 'defabcc', " '\"abc", 'xxxdefabc', ". '\"abc", " '\".abc", 'other'],
+	['defdef', 'defabcc', " '\"def", 'xxxdefdef', ". '\"abc", " '\".def", 'other']
+);
+
+# in:  *abc*
+# out: (.*)abc(.*)
+
+test
+(
+	'Regexp test: *abc* becomes ^(.*)abc(.*)$',
+	'', '', '*abc*', '=def=',
+	['abcdef', "abc '\"", 'xxxabcdef', ".abc '\"", 'other'],
+	['defdef', "def '\"", 'xxxdefdef', ".abc '\"", 'other']
+);
+
+# in:  abc\*
+# out: abc\*
+
+test
+(
+	'Regexp test: abc\\* becomes ^abc\\*$',
+	'', '', 'abc\\*', 'def',
+	['abc*', 'aabc*', 'abc*d', 'other'],
+	['def',  'aabc*', 'abc*d', 'other']
+);
+
+# in:  abc\**
+# out: abc\*(.*)
+
+test
+(
+	'Regexp test: abc\\** becomes ^abc\\*(.*)',
+	'', '', 'abc\\**', 'def=',
+	['abc*def', "abc* '\"", 'xxxabc*def', ".abc* '\"", 'other'],
+	['defdef',  "def '\"",  'xxxabc*def', ".abc* '\"", 'other']
+);
+
+# in:  abc\\*
+# out: abc\\(.*)
+
+test
+(
+	'Regexp test: abc\\\\* becomes ^abc\\\\(.*)$',
+	'', '', 'abc\\\\*', 'def=',
+	['abc\\def', 'abc\\', 'aabc\\def', 'aabc\\', 'other'],
+	['defdef',   'def',   'aabc\\def', 'aabc\\', 'other']
+);
+
+# in:  abc\\\*
+# out: abc\\\*
+
+test
+(
+	'Regexp test: abc\\\\\\* becomes ^abc\\\\\\*$',
+	'', '', 'abc\\\\\\*', 'def',
+	['abc\\*', 'abc\\def', 'aabc\\*', 'abc\\', 'other'],
+	['def',    'abc\\def', 'aabc\\*', 'abc\\', 'other']
+);
+
+# in:  abc\\\\*
+# out: abc\\\\(.*)
+
+test
+(
+	'Regexp test: abc\\\\\\\\* becomes ^abc\\\\\\\\(.*)$',
+	'', '', 'abc\\\\\\\\*', 'def=',
+	['abc\\\\', 'abc\\\\def', 'aabc\\\\', 'aabc\\\\def', 'other'],
+	['def',     'defdef',     'aabc\\\\', 'aabc\\\\def', 'other']
+);
+
+# in:  abc\\\\\*
+# out: abc\\\\\*
+
+test
+(
+	'Regexp test: abc\\\\\\\\\\* becomes ^abc\\\\\\\\\\*$',
+	'', '', 'abc\\\\\\\\\\*', 'def',
+	['abc\\\\*', 'abc\\\\def', 'aabc\\\\*', 'other'],
+	['def',      'abc\\\\def', 'aabc\\\\*', 'other']
+);
+
+# in:  abc\\\\\\*
+# out: abc\\\\\\(.*)
+
+test
+(
+	'Regexp test: abc\\\\\\\\\\\\* becomes ^abc\\\\\\\\\\\\(.*)$',
+	'', '', 'abc\\\\\\\\\\\\*', 'def=',
+	['abc\\\\\\', 'abc\\\\\\def', 'aabc\\\\\\', 'aabc\\\\\\def', 'other'],
+	['def',       'defdef',       'aabc\\\\\\', 'aabc\\\\\\def', 'other']
+);
+
+# in:  abc\\\\\\\*
+# out: abc\\\\\\\*
+
+test
+(
+	'Regexp test: abc\\\\\\\\\\\\\\* becomes abc\\\\\\\\\\\\\\*',
+	'', '', 'abc\\\\\\\\\\\\\\*', 'def',
+	['abc\\\\\\*', 'aabc\\\\\\*', 'abc\\\\\\def', 'other'],
+	['def',        'aabc\\\\\\*', 'abc\\\\\\def', 'other']
+);
+
+# in:  \*abc
+# out: \*abc
+
+test
+(
+	'Regexp test: \\*abc becomes ^\\*abc$',
+	'', '', '\\*abc', 'def',
+	['*abc', 'a*abc', '*abcd', 'other'],
+	['def',  'a*abc', '*abcd', 'other']
+);
+
+# in:  \*abc*
+# out: \*abc(.*)
+
+test
+(
+	'Regexp test: \\*abc* becomes ^\\*abc(.*)$',
+	'', '', '\\*abc*', 'def=',
+	['*abc', '*abc*', 'a*abc', 'a*abc*', 'other'],
+	['def',  'def*',  'a*abc', 'a*abc*', 'other']
+);
+
+# in:  *abc\*
+# out: (.*)abc\*
+
+test
+(
+	'Regexp test: *abc\\* becomes ^(.*)abc\\*$',
+	'', '', '*abc\\*', 'def=',
+	['*abc', '*abc*', 'abc*a', '*and*a', 'other'],
+	['*abc', 'def*',  'abc*a', '*and*a', 'other']
+);
+
+# in:  \*abc\*
+# out: \*abc\*
+
+test
+(
+	'Regexp test: \\*abc\\* becomes \\*abc\\*',
+	'', '', '\\*abc\\*', 'def',
+	['*abc', '*abc*', 'abc*', 'other'],
+	['*abc', 'def',   'abc*', 'other']
+);
+
+# in:  a?c*
+# out: a(.)c(.*)
+
+test
+(
+	'Regexp test: a?c* becomes ^a(.)c(.*)$',
+	'', '', 'a?c*', 'b=d=',
+	['a1c', 'a2c1', 'a3c22', 'aa1c', 'a c', 'a c ', "a'c\" ", 'other'],
+	['b1d', 'b2d1', 'b3d22', 'aa1c', 'b d', 'b d ', "b'd\" ", 'other']
+);
+
+# in:  ????
+# out: (.)(.)(.)(.)
+
+test
+(
+	'Regexp test: ???? becomes ^(.)(.)(.)(.)$ with implicit = dst',
+	'', '', '????', '=.=.=.=',
+	['abcd',    'd f ',    'abc', 'other'],
+	['a.b.c.d', 'd. .f. ', 'abc', 'other']
+);
+
+test
+(
+	'Regexp test: ???? becomes ^(.)(.)(.)(.)$ with explicit =#= dst',
+	'', '', '????', '=4==3==2==1=',
+	['abcd', 'd f ', "'\"' ", 'other'],
+	['dcba', ' f d', " '\"'", 'other']
+);
+
+# in:  ?\??
+# out: (.)\?(.)
+
+test
+(
+	'Regexp test: ?\\?? becomes ^(.)\\?(.)$ with explicit =#= dst',
+	'', '', '?\\??', '=2==1=',
+	['a?b', 'd?f', 'aa?b', 'a?bb', "'?'", 'other'],
+	['ba',  'fd',  'aa?b', 'a?bb', "''",  'other']
+);
+
+test
+(
+	'Regexp test: ?\\?? becomes ^(.)\\?(.)$ with implicit = dst',
+	'', '', '?\\??', '==',
+	['a?b', 'd?f', 'aa?b', 'a?bb', "'?'", 'other'],
+	['ab',  'df',  'aa?b', 'a?bb', "''", 'other']
+);
+
+test
+(
+	'Regexp test: ?\\?? becomes ^(.)\\?(.)$ with implicit = dst that looks explicit (=0=)',
+	'', '', '?\\??', '=0=',
+	['a?b', 'd?f', 'aa?b', 'a?bb', "'?'", 'other'],
+	['a0b', 'd0f', 'aa?b', 'a?bb', "'0'", 'other']
+);
+
+test
+(
+	'Regexp test: ?\\?? becomes ^(.)\\?(.)$ with implicit = dst that looks explicit (=99=)',
+	'', '', '?\\??', '=99=',
+	['a?b',  'd?f',  'aa?b', 'a?bb', "'?'",  'other'],
+	['a99b', 'd99f', 'aa?b', 'a?bb', "'99'", 'other']
+);
+
+# in:  ?\\??
+# out: (.)\\(.)(.)
+
+test
+(
+	'Regexp test: ?\\\\?? becomes ^(.)\\\\(.)(.)$',
+	'', '', '?\\\\??', '===',
+	['a\\bc', 'd\\ef', 'aa\\bc', 'a\\bcd', "'\\?x", 'other'],
+	['abc',   'def',   'aa\\bc', 'a\\bcd', "'?x",   'other']
+);
+
+# in:  a[a-c]d
+# out: a([a-c])d
+
+test
+(
+	'Regexp test: a[a-c]d becomes ^a([a-c])d$',
+	'', '', 'a[a-c]d', 'd=a',
+	['aad', 'abd', 'acd', 'add', 'aed', 'afd', 'aaad', 'aadd', 'a^d'],
+	['daa', 'dba', 'dca', 'add', 'aed', 'afd', 'aaad', 'aadd', 'a^d']
+);
+
+# in:  a[^a-c]d
+# out: a([\^a-c])d
+
+test
+(
+	'Regexp test: a[^a-c]d becomes ^a([\\^a-c])d$ (i.e. [^...] is not supported)',
+	'', '', 'a[^a-c]d', 'd=a',
+	['a^d', 'aad', 'abd', 'acd', 'add', 'aed', 'afd', 'aaad', 'aadd'],
+	['d^a', 'daa', 'dba', 'dca', 'add', 'aed', 'afd', 'aaad', 'aadd']
+);
+
+# in:  abc*def?ghi[a-c]jkl
+# out: abc(.*)def(.)ghi([a-c])jkl
+
+test
+(
+	'Regexp test: abc*def?ghi[a-c]jkl becomes ^abc(.*)def(.)ghi([a-c])jkl$',
+	'', '', 'abc*def?ghi[a-c]jkl', '=.=.=',
+	['abcxxxdefxghiajkl', 'abcyyydefyghibjkl', 'abczzzdefzghicjkl', 'abcxxxdefxghidjkl', 'abcyyydefyghiejkl', 'abczzzdefzghifjkl', 'other'],
+	['xxx.x.a',           'yyy.y.b',           'zzz.z.c',           'abcxxxdefxghidjkl', 'abcyyydefyghiejkl', 'abczzzdefzghifjkl', 'other']
+);
+
+# in:  abc*def?ghi[a-c\]]jkl
+# out: abc(.*)def(.)ghi([a-c\]])jkl
+
+test
+(
+	'Regexp test: abc*def?ghi[a-c\\]]jkl becomes ^abc(.*)def(.)ghi([a-c\\]])jkl$ (i.e. \\] inside [])',
+	'', '', 'abc*def?ghi[a-c\]]jkl', '=.=.=',
+  	['abcxxxdefxghiajkl', 'abcyyydefyghibjkl', 'abczzzdefzghicjkl', 'abcaaadefaghi]jkl', 'abcxxxdefxghidjkl', 'other'],
+	['xxx.x.a',           'yyy.y.b',           'zzz.z.c',           'aaa.a.]',           'abcxxxdefxghidjkl', 'other']
+);
+
+# in:  *a[abc]b[def]c?
+# out: ^(.*)a([abc])b([def])c(.)$
+
+test
+(
+	'Regexp test: *a[abc]b[def]c? becomes ^(.*)a([abc])b([def])c(.)$',
+	'', '', '*a[abc]b[def]c?', '=.=.=.=',
+	['abcabbecz', 'abcadbecz', 'other'],
+	['abc.b.e.z', 'abcadbecz', 'other']
+);
+
+# in:  \*a\[abc]\?def
+# out: ^\*a\[abc]\?def$
+
+test
+(
+	'Regexp test: \\*a\\[abc]\\?def becomes ^\\*a\\[abc]\\?def$ (all escaped)',
+	'', '', '\\*a\\[abc]\\?def', 'def',
+	['*a[abc]?def', 'a*a[abc]?def', '*a[abc]?defa', 'other'],
+	['def',         'a*a[abc]?def', '*a[abc]?defa', 'other']
+);
+
+# in:  \\*a\\[abc]\\?def
+# out: ^\\(.*)a\\([abc])\\(.)def$
+
+test
+(
+	'Regexp test: \\\\*a\\\\[abc]\\\\?def becomes ^\\\\(.*)a\\\\([abc])\\\\(.)def$ (\ then not escaped)',
+	'', '', '\\\\*a\\\\[abc]\\\\?def', '=.=.=',
+	['\\abca\\b\\zdef', 'other'],
+	['abc.b.z',         'other']
+);
+
+# in:  \\\*a\\\[abc]\\\?def
+# out: ^\\\*a\\\[abc]\\\?def$
+
+test
+(
+	'Regexp test: \\\\\\*a\\\\\\[abc]\\\\\\?def becomes ^\\\\\\*a\\\\\\[abc]\\\\\\?def$ (\\ then escaped)',
+	'', '', '\\\\\\*a\\\\\\[abc]\\\\\\?def', 'def',
+	['\\*a\\[abc]\\?def', 'other'],
+	['def',               'other']
+);
+
+# in:  \\\\*a\\\\[abc]\\\\?def
+# out: ^\\\\(.*)a\\\\([abc])\\\\(.)def$
+
+test
+(
+	'Regexp test: \\\\\\\\*a\\\\\\\\[abc]\\\\\\\\?def becomes ^\\\\\\\\(.*)a\\\\\\\\([abc])\\\\\\\\(.)def$ (\\\\ then not escaped)',
+	'', '', '\\\\\\\\*a\\\\\\\\[abc]\\\\\\\\?def', '=.=.=',
+	['\\\\abca\\\\b\\\\zdef', 'other'],
+	['abc.b.z',               'other']
+);
+
+# in:  a[*?]b
+# out: ^a([*?])b$
+
+test
+(
+	'Regexp test: a[*?]b becomes ^a([*?])b$ (? and * in [])',
+	'', '', 'a[*?]b', '=',
+	['a*b', 'a?b', 'azb', 'other'],
+	['*',   '?',   'azb', 'other']
+);
+
+# in:  a=b
+# out: ^a(.*)b$
+
+test
+(
+	'Regexp test: a=b becomes ^a(.*)b$ (= as *)',
+	'', '', 'a=b', 'b=a',
+	['axyzb', 'ab', 'other'],
+	['bxyza', 'ba', 'other']
+);
+
+# in:  {abc}.*
+# out: ^((?:abc))\.(.*)$
+
+test
+(
+	'Regexp test: {abc}.* becomes ^((?:abc))\.(.*)$ ({} single choice)',
+	'', '', '{abc}.*', '=_=',
+	['abc.a', 'abc.b', 'def.c', 'other'],
+	['abc_a', 'abc_b', 'def.c', 'other']
+);
+
+# in:  \{abc\}.*
+# out: ^\{abc\}\.(.*)$
+
+test
+(
+	'Regexp test: \\{abc\\}.* becomes ^\\{abc\\}\\.(.*)$ (escaped {} single choice)',
+	'', '', '\\{abc\\}.*', 'abc_=',
+	['{abc}.a', '{abc}.b', '{def}.c', 'other'],
+	['abc_a',   'abc_b',   '{def}.c', 'other']
+);
+
+# in:  {abc,def}.*
+# out: ^((?:abc|def))\.(.*)$
+
+test
+(
+	'Regexp test: {abc,def}.* becomes ^((?:abc|def))\\.(.*)$ ({,} two choices)',
+	'', '', '{abc,def}.*', '=_=',
+	['abc.a', 'abc.b', 'def.c', 'def.d', 'other'],
+	['abc_a', 'abc_b', 'def_c', 'def_d', 'other']
+);
+
+# in:  \{abc,def\}.*
+# out: ^\{abc,def\}\.(.*)$
+
+test
+(
+	'Regexp test: \\{abc,def\\}.* becomes ^\\{abc,def\\}\\.(.*)$ (escaped {,} two choices)',
+	'', '', '\{abc,def\}.*', 'xxx_=',
+	['abc.a', '{abc,def}.b', 'def.c', '{abc,def}.d', 'other'],
+	['abc.a', 'xxx_b',       'def.c', 'xxx_d',       'other']
+);
+
+# in: \{\}
+# out: ^\{\}$
+
+test
+(
+	'Regexp test: \\{\\} becomes ^\\{\\}$ (escaped {} empty)',
+	'', '', '\\{\\}', 'abc',
+	['{}',  'a{}', '{}b', 'other'],
+	['abc', 'a{}', '{}b', 'other']
+);
+
+# in: a.b^c$d(e)f|g+hi@j%k&l
+# out: a\.b\^c\$d\(e\)f\|g\+h\i\@j%k&l
+
+test
+(
+	'Regexp test: a.b^c$d(e)f|g+hi@j%k&l becomes a\.b\^c\$d\(e\)f\|g\+h\\i\@j%k&l (irrelevant meta-characters defused)',
+	'', '', 'a.b^c$d(e)f|g+hi@j%k&l.[.^$()|+@]', 'a.b^c$d(e)f|g+hi@j%k&l.=.$j.@k',
+	['a.b^c$d(e)f|g+hi@j%k&l.|',       'other'],
+	['a.b^c$d(e)f|g+hi@j%k&l.|.$j.@k', 'other'],
+	0, '', ''
+);
+
+# Test error messages
+
+test
+(
+	'Error test: Too many explicit dst =#= patterns',
+	'', '', '*.c', '=1=.=2=',
+	['abc.c', 'def.c', 'other'],
+	['abc.c', 'def.c', 'other'],
+	1, '', "mved: Too many explicit dst =#= patterns (=2= has no counterpart in src)\n"
+);
+
+test
+(
+	'Error test: Too many implicit dst = patterns',
+	'', '', '*.c', '=.=',
+	['abc.c', 'def.c', 'other'],
+	['abc.c', 'def.c', 'other'],
+	1, '', "mved: Too many implicit dst = patterns\n"
+);
+
+test
+(
+	'Error test: No such file or directory',
+	'', '', '*.c', '=.c2',
+	['other'],
+	['other'],
+	1, '', "mved: No such file or directory: test.i/*.c\n"
+);
+
+test
+(
+	'Error test: Cannot mix implicit (=) and explicit (=#=) patterns',
+	'', '', '*.*.c', '=.=2=.c',
+	['a.b.c', 'other'],
+	['a.b.c', 'other'],
+	1, '', "mved: Cannot mix implicit (=) and explicit (=#=) patterns\n"
+);
+
+# These tests show the lack of support for complex {,,} multiple patterns
+
+test
+(
+	'Error test: src (test.i/{abc,{1,2,3},def}) might contain an unsupported use of a {,} pattern',
+	'', '', '{abc,{1,2,3},def}', '=-v2',
+	['abc', 'def', 'ghi', 'abc1def', 'abc2def', 'abc3def', '{abc,1,def}', '{abc,2,def}', '{abc,3,def}', '{abc,4,def}', 'other'],
+	['abc', 'def', 'ghi', 'abc1def', 'abc2def', 'abc3def', '{abc,1,def}', '{abc,2,def}', '{abc,3,def}', '{abc,4,def}', 'other'],
+	1, '', "mved: src (test.i/{abc,{1,2,3},def}) might contain an unsupported use of a {,} pattern\nLiteral curly braces can be escaped with backslashes\n"
+);
+
+test
+(
+	'Error test: src (test.i/{abc,{1,2,3},def}.*) might contain an unsupported use of a {,} pattern',
+	'', '', '{abc,{1,2,3},def}.*', '=-v2.=',
+	['abc.txt', 'def.txt', 'ghi.txt', 'abc1def.i', 'abc2def.i', 'abc3def.i', '{abc,1,def}.i', '{abc,2,def}.i', '{abc,3,def}.i', '{abc,4,def}.i', 'other'],
+	['abc.txt', 'def.txt', 'ghi.txt', 'abc1def.i', 'abc2def.i', 'abc3def.i', '{abc,1,def}.i', '{abc,2,def}.i', '{abc,3,def}.i', '{abc,4,def}.i', 'other'],
+	1, '', "mved: src (test.i/{abc,{1,2,3},def}.*) might contain an unsupported use of a {,} pattern\nLiteral curly braces can be escaped with backslashes\n"
+);
+
+test
+(
+	'Error test: src (test.i/{}) might contain an unsupported use of a {,} pattern ({} with no other pattern)',
+	'', '', '{}', '{}_',
+	['{}', 'other'],
+	['{}', 'other'],
+	1, '', "mved: src (test.i/{}) might contain an unsupported use of a {,} pattern\nLiteral curly braces can be escaped with backslashes\n"
+);
+
+test
+(
+	'Error test: src (test.i/{}.*) might contain an unsupported use of a {,} pattern ({} with another pattern *)',
+	'', '', '{}.*', '{}_=',
+	['{}.a', '{}.b', 'other'],
+	['{}.a', '{}.b', 'other'],
+	1, '', "mved: src (test.i/{}.*) might contain an unsupported use of a {,} pattern\nLiteral curly braces can be escaped with backslashes\n"
+);
+
+test
+(
+	'Error test: src (test.i/{a*,def}.*) might contain an unsupported use of a {,} pattern ({} with nested patterns)',
+	'', '', '{a*,def}.*', '=.=',
+	['abc.a', 'aaa.b', 'def.c'],
+	['abc.a', 'aaa.b', 'def.c'],
+	1, '', "mved: src (test.i/{a*,def}.*) might contain an unsupported use of a {,} pattern\nLiteral curly braces can be escaped with backslashes\n"
+);
+
+test
+(
+	'Error test: src (test.i/{abc*}.*) might contain an unsupported use of a {,} pattern ({} single choice with nested pattern)',
+	'', '', '{abc*}.*', 'def.=2=',
+	['abc.a'],
+	['abc.a'],
+	1, '', "mved: src (test.i/{abc*}.*) might contain an unsupported use of a {,} pattern\nLiteral curly braces can be escaped with backslashes\n"
+);
+
+test
+(
+	'Error test: Aborting: dst test.i/def appears multiple times',
+	'', '', 'abc.*', 'def',
+	['abc.c', 'abc.h'],
+	['abc.c', 'abc.h'],
+	1, '', "mved: Aborting: dst test.i/def appears multiple times\n"
+);
+
+test
+(
+	'Error test: Aborting: Nervous about src test.i/abc.c and dst test.i/abc.c',
+	'', '', '*.c', '=bc.c',
+	['abc.c', 'a.c'],
+	['abc.c', 'a.c'],
+	1, '', "mved: Aborting: Nervous about src test.i/abc.c and dst test.i/abc.c\nUse -n to check and then -f to force it, if and only if you are certain\n"
+);
+
+test
+(
+	'Error test: Aborting: dst test.i/abc.d already exists',
+	'', '', '*.c', '=.d',
+	['abc.c', 'abc.d'],
+	['abc.c', 'abc.d'],
+	1, '', "mved: Aborting: dst test.i/abc.d already exists\nUse -n to check and then -f to force it, if and only if you are certain\n"
+);
+
+test
+(
+	'Error test: Failed to remove existing directory test.i/ro',
+	'-f', '', 'abc', 'ro',
+	['abc', 'def', 'ro/', 'ro/file', 'ro/.file'],
+	['abc', 'def', 'ro/', 'ro/file', 'ro/.file'],
+	1,
+	"mved: Removing directory test.i/ro\n",
+	"mved: Failed to remove existing test.i/ro/.file: Permission denied\n" .
+	"mved: Failed to remove existing test.i/ro/file: Permission denied\n" .
+	"mved: Failed to remove existing directory test.i/ro: Directory not empty\n",
+	sub # setup_ihook
+	{
+		my $dir = shift;
+		system("chmod -w $dir/ro") == 0 or warn "Failed to chmod -w $dir/ro\n";
+	},
+	sub # setup_ohook
+	{
+		my $dir = shift;
+		system("chmod -w $dir/ro") == 0 or warn "Failed to chmod -w $dir/ro\n";
+	},
+	sub # teardown_ihook
+	{
+		my $dir = shift;
+		system("chmod +w $dir/ro") == 0 or warn "Failed to chmod -w $dir/ro\n";
+	},
+	sub # teardown_ohook
+	{
+		my $dir = shift;
+		system("chmod +w $dir/ro") == 0 or warn "Failed to chmod -w $dir/ro\n";
+	}
+);
+
+test
+(
+	'Error test: Failed to remove existing test.i/ro',
+	'-f', '', 'abc', 'ro',
+	['abc', 'def', 'ro'],
+	['abc', 'def', 'ro'],
+	1,
+	"mved: Removing test.i/ro\n",
+	"mved: Failed to remove existing test.i/ro: Permission denied\n",
+	sub # setup_ihook
+	{
+		my $dir = shift;
+		system("chmod -w $dir") == 0 or warn "Failed to chmod -w $dir\n";
+	},
+	sub # setup_ohook
+	{
+		my $dir = shift;
+		system("chmod -w $dir") == 0 or warn "Failed to chmod -w $dir\n";
+	},
+	sub # teardown_ihook
+	{
+		my $dir = shift;
+		system("chmod +w $dir") == 0 or warn "Failed to chmod -w $dir\n";
+	},
+	sub # teardown_ohook
+	{
+		my $dir = shift;
+		system("chmod +w $dir") == 0 or warn "Failed to chmod -w $dir\n";
+	}
+);
+
+test
+(
+	'Error test: Failed to rename file',
+	'', '', 'abc', 'def',
+	['abc', 'other'],
+	['abc', 'other'],
+	1, '', "mved: Failed to rename test.i/abc to test.i/def: Permission denied\nmved: Aborted\n",
+	sub # setup_ihook
+	{
+		my $dir = shift;
+		system("chmod -w $dir") == 0 or warn "Failed to chmod -w $dir\n";
+	},
+	undef, # setup_ohook
+	sub # teardown_ihook
+	{
+		my $dir = shift;
+		system("chmod +w $dir") == 0 or warn "Failed to chmod -w $dir\n";
+	},
+	undef # teardown_ohook
+);
+
+test
+(
+	'Error test: Failed to rename directory',
+	'', '', 'abc', 'def',
+	['abc/', 'other/'],
+	['abc/', 'other/'],
+	1, '', "mved: Failed to rename directory test.i/abc to test.i/def: Permission denied\nmved: Aborted\n",
+	sub # setup_ihook
+	{
+		my $dir = shift;
+		system("chmod -w $dir") == 0 or warn "Failed to chmod -w $dir\n";
+	},
+	undef, # setup_ohook
+	sub # teardown_ihook
+	{
+		my $dir = shift;
+		system("chmod +w $dir") == 0 or warn "Failed to chmod -w $dir\n";
+	},
+	undef # teardown_ohook
+);
+
+test
+(
+	'Error test: Failure to rename once after three successes (i.e. all renamed files renamed back)',
+	'', 'MVED_TEST_START_FAILING_AFTER=3 MVED_TEST_STOP_FAILING_AFTER=1', '=.c', '=.c.bak',
+	[qw(a.c b.c c.c d.c other)],
+	[qw(a.c b.c c.c d.c other)],
+	1, '',
+	"mved: Failed to rename test.i/d.c to test.i/d.c.bak: \n" .
+	"mved: Aborting: Undoing changes\n" .
+	"mved: Aborted\n"
+);
+
+test
+(
+	'Error test: Failure to rename directory once after three successes (i.e. all renamed directories renamed back)',
+	'', 'MVED_TEST_START_FAILING_AFTER=3 MVED_TEST_STOP_FAILING_AFTER=1', '=.c', '=.c.bak',
+	[qw(a.c/ b.c/ c.c/ d.c/ other/)],
+	[qw(a.c/ b.c/ c.c/ d.c/ other/)],
+	1, '',
+	"mved: Failed to rename directory test.i/d.c to test.i/d.c.bak: \n" .
+	"mved: Aborting: Undoing changes\n" .
+	"mved: Aborted\n"
+);
+
+test
+(
+	'Error test: Failure to rename twice after three successes (i.e. one file not renamed back)',
+	'', 'MVED_TEST_START_FAILING_AFTER=3 MVED_TEST_STOP_FAILING_AFTER=2', '=.c', '=.c.bak',
+	[qw(a.c b.c c.c     d.c other)],
+	[qw(a.c b.c c.c.bak d.c other)],
+	1, '',
+	"mved: Failed to rename test.i/d.c to test.i/d.c.bak: \n" .
+	"mved: Aborting: Undoing changes\n" .
+	"mved: Failed to rename test.i/c.c.bak back to test.i/c.c: \n" .
+	"mved: Aborted\n"
+);
+
+test
+(
+	'Error test: Failure to rename directory twice after three successes (i.e. one file not renamed back)',
+	'', 'MVED_TEST_START_FAILING_AFTER=3 MVED_TEST_STOP_FAILING_AFTER=2', '=.c', '=.c.bak',
+	[qw(a.c/ b.c/ c.c/     d.c/ other)],
+	[qw(a.c/ b.c/ c.c.bak/ d.c/ other)],
+	1, '',
+	"mved: Failed to rename directory test.i/d.c to test.i/d.c.bak: \n" .
+	"mved: Aborting: Undoing changes\n" .
+	"mved: Failed to rename directory test.i/c.c.bak back to test.i/c.c: \n" .
+	"mved: Aborted\n"
+);
+
+test
+(
+	'Error test: Failure to rename thrice after three successes (i.e. two files not renamed back)',
+	'', 'MVED_TEST_START_FAILING_AFTER=3 MVED_TEST_STOP_FAILING_AFTER=3', '=.c', '=.c.bak',
+	[qw(a.c b.c     c.c     d.c other)],
+	[qw(a.c b.c.bak c.c.bak d.c other)],
+	1, '',
+	"mved: Failed to rename test.i/d.c to test.i/d.c.bak: \n" .
+	"mved: Aborting: Undoing changes\n" .
+	"mved: Failed to rename test.i/c.c.bak back to test.i/c.c: \n" .
+	"mved: Failed to rename test.i/b.c.bak back to test.i/b.c: \n" .
+	"mved: Aborted\n"
+);
+
+test
+(
+	'Error test: Failure to rename directory thrice after three successes (i.e. two files not renamed back)',
+	'', 'MVED_TEST_START_FAILING_AFTER=3 MVED_TEST_STOP_FAILING_AFTER=3', '=.c', '=.c.bak',
+	[qw(a.c/ b.c/     c.c/     d.c/ other)],
+	[qw(a.c/ b.c.bak/ c.c.bak/ d.c/ other)],
+	1, '',
+	"mved: Failed to rename directory test.i/d.c to test.i/d.c.bak: \n" .
+	"mved: Aborting: Undoing changes\n" .
+	"mved: Failed to rename directory test.i/c.c.bak back to test.i/c.c: \n" .
+	"mved: Failed to rename directory test.i/b.c.bak back to test.i/b.c: \n" .
+	"mved: Aborted\n"
+);
+
+# Test options
+
+test
+(
+	'Option test: --help',
+	'--help', '', '', '',
+	[],
+	[],
+	0,
+	"usage: mved [options] src dst\n" .
+	"options:\n" .
+	"\n" .
+	"  --help    - Print the help message then exit\n" .
+	"  --version - Print the version message then exit\n" .
+	"  -h        - Print the help message then exit\n" .
+	"  -m        - Print the manpage then exit\n" .
+	"  -w        - Print the manpage in HTML format then exit\n" .
+	"  -r        - Print the manpage in nroff format then exit\n" .
+	"  -n        - Don't rename anything. Just print commands\n" .
+	"  -f        - Force dangerous actions (Check with -n first!)\n" .
+	"  -q        - Don't print skipping or removing messages\n" .
+	"  -v        - Print the equivalent mv commands (implied by -d)\n" .
+	"  -d        - Print debug messages\n" .
+	"  -b #      - Set the number of backslashes to check for (default 16)\n" .
+	"\n" .
+	"mved carefully renames multiple files and directories.\n" .
+	"See the mved(1) manpage for more information.\n" .
+	"\n" .
+	"Name: mved\n" .
+	"Version: 3.0\n" .
+	"Date: 20200625\n" .
+	"Author: raf <raf\@raf.org>\n" .
+	"URL: http://raf.org/mved/\n" .
+	"GIT: https://github.com/raforg/mved/\n" .
+	"\n" .
+	"Copyright (C) 1997, 2003, 2006, 2008-2009, 2011, 2020 raf <raf\@raf.org>\n" .
+	"\n" .
+	"This is free software released under the terms of the GPLv2+:\n" .
+	"\n" .
+	"    https://www.gnu.org/licenses/\n" .
+	"\n" .
+	"There is no warranty; not even for merchantability or fitness\n" .
+	"for a particular purpose.\n" .
+	"\n" .
+	"Report bugs to raf <raf\@raf.org>\n",
+	''
+);
+
+test
+(
+	'Option test: --version',
+	'--version', '', '', '',
+	[],
+	[],
+	0,
+	"mved-3.0\n",
+	''
+);
+
+test
+(
+	'Option test: -h',
+	'-h', '', '', '',
+	[],
+	[],
+	0,
+	"usage: mved [options] src dst\n" .
+	"options:\n" .
+	"\n" .
+	"  --help    - Print the help message then exit\n" .
+	"  --version - Print the version message then exit\n" .
+	"  -h        - Print the help message then exit\n" .
+	"  -m        - Print the manpage then exit\n" .
+	"  -w        - Print the manpage in HTML format then exit\n" .
+	"  -r        - Print the manpage in nroff format then exit\n" .
+	"  -n        - Don't rename anything. Just print commands\n" .
+	"  -f        - Force dangerous actions (Check with -n first!)\n" .
+	"  -q        - Don't print skipping or removing messages\n" .
+	"  -v        - Print the equivalent mv commands (implied by -d)\n" .
+	"  -d        - Print debug messages\n" .
+	"  -b #      - Set the number of backslashes to check for (default 16)\n" .
+	"\n" .
+	"mved carefully renames multiple files and directories.\n" .
+	"See the mved(1) manpage for more information.\n" .
+	"\n" .
+	"Name: mved\n" .
+	"Version: 3.0\n" .
+	"Date: 20200625\n" .
+	"Author: raf <raf\@raf.org>\n" .
+	"URL: http://raf.org/mved/\n" .
+	"GIT: https://github.com/raforg/mved/\n" .
+	"\n" .
+	"Copyright (C) 1997, 2003, 2006, 2008-2009, 2011, 2020 raf <raf\@raf.org>\n" .
+	"\n" .
+	"This is free software released under the terms of the GPLv2+:\n" .
+	"\n" .
+	"    https://www.gnu.org/licenses/\n" .
+	"\n" .
+	"There is no warranty; not even for merchantability or fitness\n" .
+	"for a particular purpose.\n" .
+	"\n" .
+	"Report bugs to raf <raf\@raf.org>\n",
+	''
+);
+
+test
+(
+	'Option test: -n',
+	'-n', '', '*.c', '=.c.bak',
+	[qw(a.c b.c c.c)],
+	[qw(a.c b.c c.c)],
+	0, "mv test.i/a.c test.i/a.c.bak\nmv test.i/b.c test.i/b.c.bak\nmv test.i/c.c test.i/c.c.bak\n", ''
+);
+
+test
+(
+	'Option test: -v',
+	'-v', '', '*.c', '=.c.bak',
+	[qw(a.c     b.c     c.c)],
+	[qw(a.c.bak b.c.bak c.c.bak)],
+	0, "mv test.i/a.c test.i/a.c.bak\nmv test.i/b.c test.i/b.c.bak\nmv test.i/c.c test.i/c.c.bak\n", ''
+);
+
+test
+(
+	'Option test: -n -v',
+	'-n -v', '', '*.c', '=.c.bak',
+	[qw(a.c b.c c.c)],
+	[qw(a.c b.c c.c)],
+	0, "mv test.i/a.c test.i/a.c.bak\nmv test.i/b.c test.i/b.c.bak\nmv test.i/c.c test.i/c.c.bak\n", ''
+);
+
+my $prune = ($] ge '5.010000') ? '(*PRUNE)' : ''; # Make pathological glob patterns fast when possible
+
+test
+(
+	'Option test: -d',
+	'-d', '', '*.c', '=.c.bak',
+	[qw(a.c     b.c     c.c)],
+	[qw(a.c.bak b.c.bak c.c.bak)],
+	0,
+	"mved: src glob test.i/*.c\n" .
+	"mved: dst glob test.i/=.c.bak\n" .
+	"mved: src re ^test\\.i/($prune.*?)\\.c\$\n" .
+	"mved: dst re test.i/\${1}.c.bak\n" .
+	"mved: src test.i/a.c\n" .
+	"mved: dst test.i/a.c.bak\n" .
+	"mved: src test.i/b.c\n" .
+	"mved: dst test.i/b.c.bak\n" .
+	"mved: src test.i/c.c\n" .
+	"mved: dst test.i/c.c.bak\n" .
+	"mv test.i/a.c test.i/a.c.bak\n" .
+	"mv test.i/b.c test.i/b.c.bak\n" .
+	"mv test.i/c.c test.i/c.c.bak\n",
+	''
+);
+
+test
+(
+	'Option test: -v -d',
+	'-v -d', '', '*.c', '=.c.bak',
+	[qw(a.c     b.c     c.c)],
+	[qw(a.c.bak b.c.bak c.c.bak)],
+	0,
+	"mved: src glob test.i/*.c\n" .
+	"mved: dst glob test.i/=.c.bak\n" .
+	"mved: src re ^test\\.i/($prune.*?)\\.c\$\n" .
+	"mved: dst re test.i/\${1}.c.bak\n" .
+	"mved: src test.i/a.c\n" .
+	"mved: dst test.i/a.c.bak\n" .
+	"mved: src test.i/b.c\n" .
+	"mved: dst test.i/b.c.bak\n" .
+	"mved: src test.i/c.c\n" .
+	"mved: dst test.i/c.c.bak\n" .
+	"mv test.i/a.c test.i/a.c.bak\n" .
+	"mv test.i/b.c test.i/b.c.bak\n" .
+	"mv test.i/c.c test.i/c.c.bak\n",
+	''
+);
+
+test
+(
+	'Option test: -n -d',
+	'-n -d', '', '*.c', '=.c.bak',
+	[qw(a.c b.c c.c)],
+	[qw(a.c b.c c.c)],
+	0,
+	"mved: src glob test.i/*.c\n" .
+	"mved: dst glob test.i/=.c.bak\n" .
+	"mved: src re ^test\\.i/($prune.*?)\\.c\$\n" .
+	"mved: dst re test.i/\${1}.c.bak\n" .
+	"mved: src test.i/a.c\n" .
+	"mved: dst test.i/a.c.bak\n" .
+	"mved: src test.i/b.c\n" .
+	"mved: dst test.i/b.c.bak\n" .
+	"mved: src test.i/c.c\n" .
+	"mved: dst test.i/c.c.bak\n" .
+	"mv test.i/a.c test.i/a.c.bak\n" .
+	"mv test.i/b.c test.i/b.c.bak\n" .
+	"mv test.i/c.c test.i/c.c.bak\n",
+	''
+);
+
+test
+(
+	'Option test: -n -v -d',
+	'-n -v -d', '', '*.c', '=.c.bak',
+	[qw(a.c b.c c.c)],
+	[qw(a.c b.c c.c)],
+	0,
+	"mved: src glob test.i/*.c\n" .
+	"mved: dst glob test.i/=.c.bak\n" .
+	"mved: src re ^test\\.i/($prune.*?)\\.c\$\n" .
+	"mved: dst re test.i/\${1}.c.bak\n" .
+	"mved: src test.i/a.c\n" .
+	"mved: dst test.i/a.c.bak\n" .
+	"mved: src test.i/b.c\n" .
+	"mved: dst test.i/b.c.bak\n" .
+	"mved: src test.i/c.c\n" .
+	"mved: dst test.i/c.c.bak\n" .
+	"mv test.i/a.c test.i/a.c.bak\n" .
+	"mv test.i/b.c test.i/b.c.bak\n" .
+	"mv test.i/c.c test.i/c.c.bak\n",
+	''
+);
+
+test
+(
+	'Option test: Skipping without -q',
+	'', '', 'abc=', 'abc',
+	['abc', 'def'],
+	['abc', 'def'],
+	0,
+	"mved: Skipping test.i/abc\n",
+	''
+);
+
+test
+(
+	'Option test: Skipping with -q',
+	'-q', '', 'abc=', 'abc',
+	['abc', 'def'],
+	['abc', 'def'],
+	0, '', ''
+);
+
+test
+(
+	'Option test: Removing (-f) without -q',
+	'-f', '', 'abc', 'rw',
+	['abc', 'rw', 'def'],
+	['rw',        'def'],
+	0, "mved: Removing test.i/rw\n", ''
+);
+
+test
+(
+	'Option test: Removing (-f) with -q',
+	'-f -q', '', 'abc', 'rw',
+	['abc', 'rw', 'def'],
+	['rw',        'def'],
+	0, '', ''
+);
+
+test
+(
+	'Option test: Removing directory (-f) without -q',
+	'-f', '', 'abc', 'rw',
+	['abc', 'rw/', 'rw/file', 'rw/.file', 'def'],
+	['rw',                                'def'],
+	0, "mved: Removing directory test.i/rw\n", ''
+);
+
+test
+(
+	'Option test: Removing directory (-f) with -q',
+	'-f -q', '', 'abc', 'rw',
+	['abc', 'rw/', 'rw/file', 'rw/.file', 'def'],
+	['rw',                                'def'],
+	0, '', ''
+);
+
+test
+(
+	'Option test: Undo after partial failure without -v',
+	'', 'MVED_TEST_START_FAILING_AFTER=3 MVED_TEST_STOP_FAILING_AFTER=1', '=.c', '=.c.bak',
+	[qw(a.c b.c c.c d.c other)],
+	[qw(a.c b.c c.c d.c other)],
+	1, '',
+	"mved: Failed to rename test.i/d.c to test.i/d.c.bak: \n" .
+	"mved: Aborting: Undoing changes\n" .
+	"mved: Aborted\n"
+);
+
+test
+(
+	'Option test: Undo after partial failure with -v',
+	'-v', 'MVED_TEST_START_FAILING_AFTER=3 MVED_TEST_STOP_FAILING_AFTER=1', '=.c', '=.c.bak',
+	[qw(a.c b.c c.c d.c other)],
+	[qw(a.c b.c c.c d.c other)],
+	1,
+	"mv test.i/a.c test.i/a.c.bak\n" .
+	"mv test.i/b.c test.i/b.c.bak\n" .
+	"mv test.i/c.c test.i/c.c.bak\n" .
+	"mv test.i/d.c test.i/d.c.bak\n" .
+	"mv test.i/c.c.bak test.i/c.c\n" .
+	"mv test.i/b.c.bak test.i/b.c\n" .
+	"mv test.i/a.c.bak test.i/a.c\n",
+	"mved: Failed to rename test.i/d.c to test.i/d.c.bak: \n" .
+	"mved: Aborting: Undoing changes\n" .
+	"mved: Aborted\n"
+);
+
+# Note: The following -b option tests are wierd and probably pointless.
+# We are preventing mved from handling lots of backslashes, but the glob
+# function that it uses to identify matching files still handles any number
+# of backslashes. But the glob pattern itself won't be correctly translated
+# into a regular expression. So there's a mismatch that makes things look
+# stupid. The following tests don't represent desirable behaviour. They just
+# represent actual behaviour. Don't read too much into it. The moral of the
+# story is, don't use -b to reduce the number of backslashes to handle, and
+# don't have lots of backslashes in file names.
+
+test
+(
+	'Option test: -b -1 (invalid)',
+	'-b -1', '', '=.c', '=.c.bak',
+	[qw(a.c b.c c.c d.c other)],
+	[qw(a.c b.c c.c d.c other)],
+	1, '', "mved: Invalid -b option argument: -1 (Must be a positive integer)\n"
+);
+
+test
+(
+	'Option test: -b 0 (invalid)',
+	'-b 0', '', '=.c', '=.c.bak',
+	[qw(a.c b.c c.c d.c other)],
+	[qw(a.c b.c c.c d.c other)],
+	1, '', "mved: Invalid -b option argument: 0 (Must be a positive integer)\n"
+);
+
+test
+(
+	'Option test: -b blah (invalid)',
+	'-b blah', '', '=.c', '=.c.bak',
+	[qw(a.c b.c c.c d.c other)],
+	[qw(a.c b.c c.c d.c other)],
+	1, '', "mved: Invalid -b option argument: blah (Must be a positive integer)\n"
+);
+
+test
+(
+	'Option test: -b 1 (no backslash)',
+	'-b 1', '', '*.c', '=.c.bak',
+	[qw(a.c     b.c     c.c     d.c     *.c     other)],
+	[qw(a.c.bak b.c.bak c.c.bak d.c.bak *.c.bak other)],
+	0, '', ''
+);
+
+test
+(
+	'Option test: -b 1 (1 backslash)',
+	'-b 1', '', '\\*.c', 'X.c.bak',
+	[qw(*.c     a.c other)],
+	[qw(X.c.bak a.c other)],
+	0, '', ''
+);
+
+test
+(
+	'Option test: -b 1 (1 backslash) superfluous =',
+	'-b 1', '', '\\*.c', '=.c.bak',
+	[qw(*.c a.c other)],
+	[qw(*.c a.c other)],
+	1, '', "mved: Too many implicit dst = patterns\n"
+);
+
+test
+(
+	'Option test: -b 1 (2 backslashes) not handled',
+	'-b 1', '', '\\\\*.c', '=.c.bak',
+	[qw(\\a.c   \\b.c   \\c.c   \\d.c \\\\a.c \\\\*.c other)],
+	[qw(\\a.c   \\b.c   \\c.c   \\d.c \\\\a.c \\\\*.c other)],
+	1, '', "mved: Too many implicit dst = patterns\n"
+);
+
+test
+(
+	'Option test: -b 2 (no backslash)',
+	'-b 2', '', '*.c', '=.c.bak',
+	[qw(a.c     b.c     c.c     d.c     *.c     other)],
+	[qw(a.c.bak b.c.bak c.c.bak d.c.bak *.c.bak other)],
+	0, '', ''
+);
+
+test
+(
+	'Option test: -b 2 (1 backslash)',
+	'-b 2', '', '\\*.c', 'X.c.bak',
+	[qw(*.c     other)],
+	[qw(X.c.bak other)],
+	0, '', ''
+);
+
+test
+(
+	'Option test: -b 2 (1 backslash) superflous =',
+	'-b 2', '', '\\*.c', '=.c.bak',
+	[qw(*.c other)],
+	[qw(*.c other)],
+	1, '', "mved: Too many implicit dst = patterns\n"
+);
+
+test
+(
+	'Option test: -b 2 (2 backslashes)',
+	'-b 2', '', '\\\\*.c', '=.c.bak',
+	[qw(\\a.c   \\b.c   \\c.c   \\d.c   \\\\a.c   \\\\*.c   other)],
+	[qw(a.c.bak b.c.bak c.c.bak d.c.bak \\a.c.bak \\*.c.bak other)]
+);
+
+test
+(
+	'Option test: -b 2 (3 backslashes) not handled (no such file)',
+	'-b 2', '', '\\\\\\*.c', '=.c.bak',
+	[qw(\\a.c \\\\*.c \\\\a.c \\\\\\*.c \\\\\\a.c \\\\\\\\*.c \\\\\\\\a.c other)],
+	[qw(\\a.c \\\\*.c \\\\a.c \\\\\\*.c \\\\\\a.c \\\\\\\\*.c \\\\\\\\a.c other)],
+	1, '', "mved: No such file or directory: test.i/\\\\\\*.c\n"
+);
+
+test
+(
+	'Option test: -b 2 (3 backslashes) not handled (eval re syntax error)',
+	'-b 2', '', '\\\\\\*.c', '=.c.bak',
+	[qw(\\*.c \\a.c \\\\*.c \\\\a.c \\\\\\*.c \\\\\\a.c \\\\\\\\*.c \\\\\\\\a.c other)],
+	[qw(\\*.c \\a.c \\\\*.c \\\\a.c \\\\\\*.c \\\\\\a.c \\\\\\\\*.c \\\\\\\\a.c other)],
+	1, '', "mved: Failed to convert src test.i/\\*.c from ^test\\.i/\\\\\\($prune.*?)\\.c\$ to test.i/\${1}.c.bak\n"
+);
+
+test
+(
+	'Option test: -d -b 2 (3 backslashes) not handled (eval re syntax error with debug)',
+	'-d -b 2', '', '\\\\\\*.c', '=.c.bak',
+	[qw(\\*.c \\a.c \\\\*.c \\\\a.c \\\\\\*.c \\\\\\a.c \\\\\\\\*.c \\\\\\\\a.c other)],
+	[qw(\\*.c \\a.c \\\\*.c \\\\a.c \\\\\\*.c \\\\\\a.c \\\\\\\\*.c \\\\\\\\a.c other)],
+	1,
+	"mved: src glob test.i/\\\\\\*.c\n" .
+	"mved: dst glob test.i/=.c.bak\n" .
+	"mved: src re ^test\\.i/\\\\\\($prune.*?)\\.c\$\n" .
+	"mved: dst re test.i/\${1}.c.bak\n",
+	"mved: Failed to convert src test.i/\\*.c from ^test\\.i/\\\\\\($prune.*?)\\.c\$ to test.i/\${1}.c.bak: Unmatched ) in regex; marked by <-- HERE in m/^test\\.i/\\\\\\($prune.*?) <-- HERE \\.c\$/ at (eval 1) line 1.\n\n"
+);
+
+# Finish testing
+
+system "rm -rf $testi $testo";
+
+printf("All %s tests passed\n", $num_tests) if $num_failures == 0;
+printf("%s/%s tests failed\n", $num_failures, $num_tests) if $num_failures != 0;
+exit $num_failures;
+
+# vi:set ts=4 sw=4:

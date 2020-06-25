@@ -1,10 +1,12 @@
 #!/usr/bin/env perl
+use 5.006; # and v7
 use warnings;
 use strict;
+BEGIN { pop @INC if $INC[-1] eq '.' }
 
-# mved - carefully rename multiple files
+# mved - carefully rename multiple files and directories
 #
-# Copyright (C) 1997-2011 raf <raf@raf.org>
+# Copyright (C) 1997, 2003, 2006, 2008-2009, 2011, 2020 raf <raf@raf.org>
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -17,67 +19,84 @@ use strict;
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with this program; if not, write to the Free Software
-# Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
-# or visit http://www.gnu.org/copyleft/gpl.html
+# along with this program; if not, see <https://www.gnu.org/licenses/>.
 #
-# 20111027 raf <raf@raf.org>
+# 20200625 raf <raf@raf.org>
 
 =head1 NAME
 
-I<mved> - carefully rename multiple files
+I<mved> - carefully rename multiple files and directories
 
 =head1 SYNOPSIS
 
  usage: mved [options] src dst
  options:
 
-   -h   - Print the help message then exit
-   -m   - Print the manpage then exit
-   -w   - Print the manpage in html format then exit
-   -r   - Print the manpage in nroff format then exit
-   -n   - Don't rename anything. Just print commands
-   -f   - Force dangerous actions (Check with -n first!)
-   -q   - Don't print skipping or unlinking messages
-   -v   - Print equivalent mv commands (implied by -d)
-   -d   - Print debugging messages
-   -b # - Set depth of quote characters to check (default 4)
+   --help    - Print the help message then exit
+   --version - Print the version message then exit
+   -h        - Print the help message then exit
+   -m        - Print the manpage then exit
+   -w        - Print the manpage in HTML format then exit
+   -r        - Print the manpage in nroff format then exit
+   -n        - Don't rename anything. Just print commands
+   -f        - Force dangerous actions (Check with -n first!)
+   -q        - Don't print skipping or removing messages
+   -v        - Print the equivalent mv commands (implied by -d)
+   -d        - Print debug messages
+   -b #      - Set the number of backslashes to check for (default 16)
 
 =head1 DESCRIPTION
 
-I<mved> renames multiple files. The C<src> argument is a filename glob
-specifying the set of files to rename. The C<dst> argument is a pattern
-specifying the new names for the set of files. The C<src> argument can
-contain all of the normal shell globbing constructs (C<?>, C<*> and
-C<[...]>) as well as C<=> which is a synonym for C<*>. If any normal shell
-globbing constructs are used, they must be quoted to prevent the shell from
-performing filename expansion. This is not necessary when the only construct
-used is C<=>. There are two styles of C<dst> argument. One allows C<=> to
-represent the text matching the (positionally) corresponding glob construct
-in the C<src> argument. The other allows C<=#=> (where C<#> is an integer
-from 1 to 9) to represent the text matching the C<#-th> glob construct in
-the C<src> argument. The two styles cannot be mixed.
+I<mved> carefully renames multiple files and directories. The I<src>
+argument is like a shell filename glob pattern that specifies the set of
+files or directories to rename. The I<dst> argument is a pattern that
+specifies the new names for the set of files or directories. The I<src>
+argument can contain most of the basic shell filename glob constructs (i.e.
+C<"?">, C<"*">, C<"[...]"> and C<"{...,...}">) as well as C<"="> which is a
+synonym for C<"*">. If any normal shell filename glob constructs are used,
+they will need to be quoted to prevent the shell from performing filename
+glob expansion. This is not necessary when the only construct used is
+C<"=">. However, the C<"="> character can be special in some shells and so
+might need to be quoted as well. Note that C<"[^...]"> complement character
+classes and complex uses of C<"{...,...}"> multiple patterns are not
+supported.
 
-I<mved> creates new links to the existing files. If the C<-v> verbose option
-is supplied, the corresponding I<mv> commands are printed. If any of them
-fail, they are all unlinked and the operation is aborted. If all were
-successful, the original files are unlinked.
+There are two styles of I<dst> argument. In the implicit style, C<"=">
+represents the text that matches the (positionally) corresponding glob
+construct in the I<src> argument. In the explicit style, C<"=#="> (where
+C<#> is an integer from 1 to 9) represents the text that matches the C<#-th>
+glob construct in the I<src> argument. The two styles cannot be mixed.
 
-Before renaming any files, I<mved> checks for any dubious consequences. If a
-source filename is equal to its corresponding destination filename, that
-(redundant) renaming operation is skipped. The user is informed unless the
-C<-q> quiet option is supplied. If a source filename is equal to some other
-destination filename, I<mved> gets nervous and exits unless the C<-f> force
-option is supplied. If the same filename is a destination for multiple
-source filenames, I<mved> exits unless the C<-f> force option is supplied.
-If any file to be created already exists, I<mved> exits unless the C<-f>
-force option is supplied. B<When forced, mved will unlink any existing
-destination files>. The user will be informed unless the C<-q> quiet option
-is supplied.
+I<mved> renames files or directories one at a time. If the C<-v> verbose
+option is supplied, the equivalent I<mv> commands are printed. If one of the
+renaming operations fails, any that did succeed are undone and the operation
+is aborted.
+
+Before renaming any files or directories, I<mved> checks for any potentially
+dubious consequences. If a source path is equal to its corresponding
+destination path, that (redundant) renaming operation is skipped. The user
+is informed unless the C<-q> quiet option is supplied. If a source path is
+equal to any other destination path, I<mved> gets nervous and exits unless
+the C<-f> force option is supplied. If the same path is the destination for
+multiple source paths, I<mved> exits unless the C<-f> force option is
+supplied. If any file or directory path to be created already exists,
+I<mved> exits unless the C<-f> force option is supplied. B<If forced,
+I<mved> will first remove any existing destination files or directories>.
+The user will be informed unless the C<-q> quiet option is supplied. If
+I<mved> fails to remove an existing destination file or directory, it will
+exit immediately.
 
 =head1 OPTIONS
 
 =over 4
+
+=item C<--help>
+
+Print the help message then exit.
+
+=item C<--version>
+
+Print the version message then exit.
 
 =item C<-h>
 
@@ -85,13 +104,13 @@ Print the help message then exit.
 
 =item C<-m>
 
-Print the manpage then exit. This is equivalent to executing C<man mved>
-but this works even when the manpage isn't installed properly.
+Print the manpage then exit. This is equivalent to executing C<man mved> but
+this works even when the manpage isn't installed.
 
 =item C<-w>
 
-Print the manpage in html format then exit. This lets you install the
-manpage in html format with a command like:
+Print the manpage in HTML format then exit. This lets you install the
+manpage in HTML format with commands like:
 
   mkdir -p /usr/local/share/doc/mved/html &&
   mved -w > /usr/local/share/doc/mved/html/mved.1.html
@@ -99,109 +118,137 @@ manpage in html format with a command like:
 =item C<-r>
 
 Print the manpage in nroff format then exit. This lets you install the
-manpage properly with a command like:
+manpage with a command like:
 
   mved -r > /usr/local/share/man/man1/mved.1
 
 =item C<-n>
 
-Don't rename anything. Just print the corresponding I<mv> commands and (and
+Don't rename anything. Just print the equivalent I<mv> commands (and
 possibly I<rm> commands) then exit.
 
 =item C<-f>
 
-Force I<mved> to obey even when it doesn't like what you are doing. B<If you
-force mved to rename a file to an existing file, the existing file will be
-unlinked first>. Never use this without using C<-n> first to see what you
-are telling I<mved> to do and verifying that it is what you really, really
-want to do.
+Force I<mved> to obey even when it looks like a mistake. B<If you force mved
+to rename a file or directory to an existing file or directory, the existing
+file or directory will be removed first>. Never use this without using the
+C<-n> option first to see what you are telling I<mved> to do, and verifying
+that it is what you really, really want to do.
 
 =item C<-q>
 
-Don't print "Skipping filename" messages when a source filename matches it's
-corresponding destination filename. Don't print "Unlinking filename"
-messages when forced to unlink existing files.
+Don't print C<"Skipping"> messages when a source path matches its
+corresponding destination path. Don't print C<"Removing"> messages when
+forced to remove existing files or directories.
 
 =item C<-v>
 
-Print corresponding I<mv> commands when renaming each file. Implied by the
-C<-d> option.
+Print the equivalent I<mv> commands when renaming each file or directory.
+This is implied by the C<-d> option.
 
 =item C<-d>
 
-Print debugging messages that show the C<src> and C<dst> arguments before
-and after translation from filename globs into regular expressions. Also
-print corresponding I<mv> commands when renaming each file.
+Print debug messages that show the I<src> and I<dst> arguments before and
+after translation from shell filename glob patterns to regular expressions.
+Also print the equivalent I<mv> commands when renaming each file or
+directory.
 
 =item C<-b #>
 
-Specify how many backslashes to count backwards when determining whether or
-not special characters are quoted. The default is 4 which should be more
-than you'll ever need (unless you have files with consecutive backslashes in
-their names - shudder).
+Specify how many preceding backslashes to check for when determining whether
+or not special characters are escaped. The default is 16 which should be
+more than enough (unless there are files or directories with many many
+consecutive backslashes in their names). If it is too low, I<mved> will not
+work properly for names containing lots of backslashes. So don't do that.
 
 =back
 
 =head1 EXAMPLES
 
-=over 4
-
-=item C<mved =.c~ bak/=.c.bak>
+  mved =.c~ bak/=.c.bak
 
     mv a.c~ bak/a.c.bak
     mv b.c~ bak/b.c.bak
     mv c.c~ bak/c.c.bak
 
-=item C<mved '*.[ch]' save-=.=>
+  mved '*.[ch]' save-=.=
 
     mv a.c save-a.c
     mv a.h save-a.h
     mv b.c save-b.c
     mv b.h save-b.h
 
-=item C<mved save-=.= =.=>
+  mved save-=.= =.=
 
     mv save-a.c a.c
     mv save-a.o a.o
     mv save-b.c b.c
     mv save-b.o b.o
 
-=item C<mved note= note=.txt>
+  mved note= note=.txt
 
     mv note1 note1.txt
     mv note2 note2.txt
     mv note3 note3.txt
 
-=item C<mved '[0-9][0-9][0-9][0-9][0-9][0-9]*' 19=5==6=-=3==4=-=1==2==7=>
+  mved '[0-9][0-9][0-9][0-9][0-9][0-9]*' 19=5==6=-=3==4=-=1==2==7=
 
     mv 191299-app.log 1999-12-19-app.log
     mv 211299-app.log 1999-12-21-app.log
     mv 251299-app.log 1999-12-25-app.log
     mv 281299-app.log 1999-12-28-app.log
 
-=back
+  mved '{abc,def}.*' =-v2.=
 
-=head1 RETURNS
+    mv abc.txt abc-v2.txt
+    mv def.txt def-v2.txt
 
-I<mved> returns 0 (zero) upon success, 1 (one) upon failure. Upon failure,
-no files will have been renamed.
+Note: Files and directories whose names start with a dot C<(".")> are not
+matched by I<src> arguments that start with C<"?"> or C<"*"> or even
+C<"[.]">. The leading dot must be matched explicitly. This is like normal
+shell behaviour.
+
+=head1 EXIT STATUS
+
+I<mved>'s exit status is zero upon success, or non-zero upon failure. Upon
+failure, effectively no files or directories will have been renamed, but
+some may have been renamed and then renamed back to their original names. In
+some very peculiar and unlikely circumstances, it's conceivable that
+renaming files or directories (that have been renamed) back to their
+original names might fail. If that ever happens, error messages will tell
+you which renaming attempts failed so that you can recover manually.
 
 =head1 BUGS
 
-Hard links are used so it is impossible to I<mved> files from one file
-system to another. Use I<mv> for this. Then rename with I<mved>. This is not
-really a bug. It is a safety feature.
+Files and directories are only renamed, not copied, so it's impossible to
+I<mved> files from one file system to another. Use I<mv> for this. Then
+rename them with I<mved>. This is not really a bug. It's just a limitation.
+And it's a safety feature: I<mved> is only for renaming multiple files and
+directories; I<mv> is good for moving data.
 
-Doesn't handle patterns containing pipe C<'|'> characters because this
-character is used as the regular expression separator.
+If a destination path contains a parent directory that does not already
+exist, I<mved> will not automatically create it. Use I<mkdir> first if you
+need this to happen.
 
-Presumably, there are as yet unknown bugs and they will presumably cost
-files. My advice is to always use C<-n> first, never use C<-f>, and always
-keep backups.
+The I<src> argument doesn't support the C<"[^...]"> complement character
+class glob pattern which is supported by most shells nowadays. The library
+used for globbing is based on I<csh> which is unfortunate.
 
-=head1 COPYING
+The I<src> argument only has very limited support for the C<"{...,...}">
+filename-generating multiple glob pattern. They can't be nested and they
+can't contain any other filename glob patterns or backslash-escaped
+characters either. So things like C<"{a,{1,2,3},b}"> and C<"{a*,b?}"> and
+C<"{a\*,b\?}"> won't work.
 
-Released under the terms of the GPL (http://www.gnu.org/copyleft/gpl.html)
+Even though I<mved> is thoroughly tested and has been in use for decades,
+there are, presumably, as yet unknown bugs and they might even lose files.
+My advice is to always use the C<-n> option first, never use the C<-f>
+option, and always keep backups of anything precious.
+
+=head1 LICENSE
+
+I<mved> is released under the terms of the GPLv2+
+L<https://www.gnu.org/licenses/>.
 
 =head1 HISTORY
 
@@ -211,68 +258,115 @@ since.
 
 =head1 SEE ALSO
 
-I<link(2)>, I<unlink(2)>, I<mv(1)>, I<rm(1)>, I<rename(1)>
+I<mv(1)>, I<rename(2)>, I<rm(1)>, I<unlink(2)>, I<mkdir(1)>, I<rmdir(2)>,
+I<cp(1)>, I<scp(1)>, I<rsync(1)>.
 
 =head1 AUTHOR
 
-20111027 raf <raf@raf.org>
+20200625 raf <raf@raf.org>
 
 =head1 URL
 
-C<http://raf.org/mved/>
+L<http://raf.org/mved/>,
+L<https://github.com/raforg/mved/>
 
 =cut
 
 my ($name) = $0 =~ /([^\/]+)$/;
+my $version = '3.0';
+my $date = '20200625';
 
 sub help
 {
+	my $rc = shift || 0;
+
 	print
 		"usage: $name [options] src dst\n",
 		"options:\n",
-		"  -h   - Print the help message then exit\n",
-		"  -m   - Print the manpage then exit\n",
-		"  -w   - Print the manpage in html format then exit\n",
-		"  -r   - Print the manpage in nroff format then exit\n",
-		"  -n   - Don't rename anything. Just print commands\n",
-		"  -f   - Force dangerous actions (Check with -n first!)\n",
-		"  -q   - Don't print skipping or unlinking messages\n",
-		"  -v   - Print equivalent mv commands (implied by -d)\n",
-		"  -d   - Print debugging messages\n",
-		"  -b # - Set depth of quote characters to check (default 4)\n",
 		"\n",
-		"Mved carefully renames multiple files.\n";
+		"  --help    - Print the help message then exit\n",
+		"  --version - Print the version message then exit\n",
+		"  -h        - Print the help message then exit\n",
+		"  -m        - Print the manpage then exit\n",
+		"  -w        - Print the manpage in HTML format then exit\n",
+		"  -r        - Print the manpage in nroff format then exit\n",
+		"  -n        - Don't rename anything. Just print commands\n",
+		"  -f        - Force dangerous actions (Check with -n first!)\n",
+		"  -q        - Don't print skipping or removing messages\n",
+		"  -v        - Print the equivalent mv commands (implied by -d)\n",
+		"  -d        - Print debug messages\n",
+		"  -b #      - Set the number of backslashes to check for (default 16)\n",
+		"\n",
+		"mved carefully renames multiple files and directories.\n",
+		"See the mved(1) manpage for more information.\n",
+		"\n",
+		"Name: $name\n",
+		"Version: $version\n",
+		"Date: $date\n",
+		"Author: raf <raf\@raf.org>\n",
+		"URL: http://raf.org/mved/\n",
+		"GIT: https://github.com/raforg/mved/\n",
+		"\n",
+		"Copyright (C) 1997, 2003, 2006, 2008-2009, 2011, 2020 raf <raf\@raf.org>\n",
+		"\n",
+		"This is free software released under the terms of the GPLv2+:\n",
+		"\n",
+		"    https://www.gnu.org/licenses/\n",
+		"\n",
+		"There is no warranty; not even for merchantability or fitness\n",
+		"for a particular purpose.\n",
+		"\n",
+		"Report bugs to raf <raf\@raf.org>\n";
+
+	exit $rc;
+}
+
+sub version
+{
+	print "$name-$version\n";
 	exit;
 }
 
 sub man
 {
-	my $noquotes = (`pod2man -h 2>&1` =~ /--quotes=/) ? '--quotes=none' : '';
-	system "pod2man $noquotes $0 | nroff -man | " . ($ENV{PAGER} || 'more');
+	system "pod2man -r '$name-$version' -s 1 -d '$date' -c 'USER COMMANDS' --quotes=none '$0' | nroff -man | " . ($ENV{PAGER} || 'more');
 	exit;
 }
 
 sub nroff
 {
-	my $noquotes = (`pod2man -h 2>&1` =~ /--quotes=/) ? '--quotes=none' : '';
-	system "pod2man $noquotes $0";
+	system "pod2man -r '$name-$version' -s 1 -d '$date' -c 'USER COMMANDS' --quotes=none '$0'";
 	exit;
 }
 
 sub html
 {
-	system "pod2html --noindex $0";
+	system "pod2html --title '$name(1)' --noindex '$0'";
 	unlink glob 'pod2htm*';
 	exit;
 }
 
+sub HELP_MESSAGE
+{
+	help;
+}
+
+sub VERSION_MESSAGE
+{
+	return if $ARGV[0] eq '--help'; # This is called before HELP_MESSAGE for some reason
+	version;
+}
+
+# Parse the command line
+
 my %opt;
 use Getopt::Std;
-help if !getopts('hmwrnfqvdb:', \%opt) || exists $opt{h};
+help 1 unless getopts('hmwrnfqvdb:', \%opt);
+help if exists $opt{h};
 man if exists $opt{m};
 nroff if exists $opt{r};
 html if exists $opt{w};
-help unless @ARGV == 2;
+help 1 unless @ARGV == 2;
 my $src_glob = shift;
 my $dst_glob = shift;
 my $testing = exists $opt{n};
@@ -280,56 +374,78 @@ my $force = exists $opt{f};
 my $quiet = exists $opt{q};
 my $verbose = exists $opt{v} || exists $opt{d};
 my $debug = exists $opt{d};
-my $backwards = exists $opt{b} ? $opt{b} : 4;
+my $backwards = exists $opt{b} ? $opt{b} : 16;
+die "$name: Invalid -b option argument: $opt{b} (Must be a positive integer)\n" unless $backwards =~ /^\d+$/ && $backwards > 0;
 
-print "$name: src glob <$src_glob> dst glob <$dst_glob>\n" if $debug;
+# These inject rename failures for testing
 
-# Construct a glob and get the list of matching files
+my $start_failing_after = (exists $ENV{MVED_TEST_START_FAILING_AFTER}) ? $ENV{MVED_TEST_START_FAILING_AFTER} : 0;
+my $stop_failing_after = (exists $ENV{MVED_TEST_STOP_FAILING_AFTER}) ? $ENV{MVED_TEST_STOP_FAILING_AFTER} : 0;
+
+# Construct the src glob and get the list of matching files or directories
 
 $src_glob =~ s/=/*/g;
-# Quotes in glob when no spaces doesn't match anything
-# but quotes are needed for globs that contain spaces. Wierd.
-my @src = glob(($src_glob =~ /\s/) ? '"' . $src_glob . '"' : $src_glob);
-die "$name: No such file: $src_glob\n" unless @src;
+my @src = grep { -e } glob(qu($src_glob));
+die "$name: No such file or directory: @{[qu($src_glob)]}\n" unless @src;
 
-# Translate src into a regular expression search
+# Translate the src glob into a regular expression
+
+# unescaped is the absence of a preceding odd number of backslashes (i.e. \ or \\\ or \\\\\ or \\\\\\\)
+my $unescaped = ''; $unescaped = "(?<!$unescaped\\\\)" for 1..$backwards;
+# char is \ followed by any character, or any character other than \ or ]
+my $char = qr/(?:\\.|[^\\\]])/;
+# body_part is char-char or char
+my $body_part = qr/(?:$char-$char|$char)/;
+# body is at least one body_part
+my $body = qr/$body_part+/;
+# char_class is unescaped [ followed by body followed by unescaped ]
+my $char_class = qr/$unescaped\[$body$unescaped\]/;
+# any_char is unescaped ?
+my $any_char = qr/$unescaped\?/;
+# any_str is unescaped *
+my $any_str = qr/$unescaped\*/;
+# choice is anything but { , } ? * [ ] or \ (Better than nothing)
+my $choice = qr/[^{,}?*[\]\\]+/;
+# multiple is unescaped { followed by at least one comma-separated choice followed by unescaped }
+my $multiple = qr/$unescaped\{$choice(?:,$choice)*$unescaped\}/;
+# meta is any re meta-characters that need to be escaped
+my $meta = qr/[.^\$\@()|+]/;
+# glob is any of the above glob patterns (or meta)
+my $glob = qr/(?:$char_class|$any_char|$any_str|$multiple|$meta)/;
 
 my $src_re = $src_glob;
-my $unsloshed = '';
-$unsloshed = "(?<!" . $unsloshed . "\\\\)" for 1..$backwards;
-my $head = qr/(?:\^|!)/;
-my $char = qr/(?:[^\]]|\\.)/;
-my $body_part = qr/(?::\w+:|$char-$char|$char)/;
-my $body = qr/$head?$body_part+/;
-my $char_class = qr/$unsloshed\[$body$unsloshed\]/;
-my $any_char = qr/$unsloshed\?/;
-my $any_str = qr/$unsloshed(?:\*|=)/;
-my $dot = qr/\./;
-my $glob = qr/(?:$char_class|$any_str|$any_char|$dot)/;
-my @rep;
-unshift @rep, [$&, pos($src_re), length($&)] while $src_re =~ /$glob/g;
+my $pattern_count = 0;
+my @rep; unshift @rep, [$&, pos($src_re), length($&)] while $src_re =~ /$glob/g;
+my $prune = ($] ge '5.010000') ? '(*PRUNE)' : ''; # Make pathological glob patterns fast when possible
+
 for my $rep (@rep)
 {
-	substr($src_re, $rep->[1] - $rep->[2], $rep->[2], "($rep->[0])"), next if $rep->[0] =~ /^$char_class$/;
-	substr($src_re, $rep->[1] - $rep->[2], $rep->[2], "(.*)"), next if $rep->[0] =~ /^$any_str$/;
-	substr($src_re, $rep->[1] - $rep->[2], $rep->[2], "(.)"), next if $rep->[0] =~ /^$any_char$/;
-	substr($src_re, $rep->[1] - $rep->[2], $rep->[2], "\\."), next if $rep->[0] =~ /^$dot$/;
-	die "$name: Parsing error\n";
+	my ($pattern, $pastpos, $length) = @$rep;
+	$pattern =~ s/^\[\^/[\\^/, # Defuse ^ in [^] (re needs to match glob's failure to support it)
+	substr($src_re, $pastpos - $length, $length, "($pattern)"), ++$pattern_count, next if $pattern =~ /^$char_class$/;
+	substr($src_re, $pastpos - $length, $length, "($prune.*?)"), ++$pattern_count, next if $pattern =~ /^$any_str$/;
+	substr($src_re, $pastpos - $length, $length, '(.)'), ++$pattern_count, next if $pattern =~ /^$any_char$/;
+	$pattern =~ s/^\{/(?:/, $pattern =~ s/,/|/g, $pattern =~ s/\}$/)/, # Convert {abc,def} to (?:abc|def)
+	substr($src_re, $pastpos - $length, $length, "($pattern)"), ++$pattern_count, next if $pattern =~ /^$multiple$/;
+	substr($src_re, $pastpos - $length, $length, "\\$pattern"), next if $pattern =~ /^$meta$/;
+	die "$name: Parsing error: $src_glob\n"; # This is impossible (i.e. it's not tested)
 }
 
 $src_re =~ s/^/^/;
 $src_re =~ s/$/\$/;
+$src_re =~ s/\x01/\\\x01/g;
 
-# Translate dst into a regular expression replacement
+# Translate the dst glob into a regular expression substitution
 
 my $dst_re = $dst_glob;
-my $explicit_target = qr/$unsloshed=(\d)=/;
-my $implicit_target = qr/$unsloshed=(?!\d=)/;
+$dst_re =~ s/([\$\@\x01])/\\$1/g;
+my $explicit_target = qr/$unescaped=([1-9])=/;
+my $implicit_target = qr/$unescaped=(?![1-9]=)/;
 
 if ($dst_re =~ /$explicit_target/)
 {
 	$dst_re =~ s/$explicit_target/\$\{$1\}/g;
-	die "$name: Cannot mix implicit (=) and explicit (=1=) targets\n" if $dst_re =~ /$implicit_target/;
+	die "$name: Cannot mix implicit (=) and explicit (=#=) patterns\n" if $dst_re =~ /$implicit_target/;
 }
 else
 {
@@ -339,159 +455,167 @@ else
 	}
 }
 
-print "$name: re s|$src_re|$dst_re|\n" if $debug;
-die "$name: Pattern contains '|'\n" if $src_re =~ /\|/ || $dst_re =~ /\|/;
+print "$name: src glob @{[qu($src_glob)]}\n" if $debug;
+print "$name: dst glob @{[qu($dst_glob)]}\n" if $debug;
+print "$name: src re @{[qu($src_re)]}\n" if $debug;
+print "$name: dst re @{[qu($dst_re)]}\n" if $debug;
 
-# Construct the list of dst file names
+die "$name: src (@{[qu($src_glob)]}) might contain an unsupported use of a {,} pattern\nLiteral curly braces can be escaped with backslashes\n" if $src_re =~ /$unescaped[{}]/;
+
+# Check for too many = or =#= in dst glob
+
+die "$name: Too many explicit dst =#= patterns (=$_= has no counterpart in src)\n" for grep { $_ > $pattern_count } $dst_glob =~ /$explicit_target/g;
+die "$name: Too many implicit dst = patterns\n" if $dst_glob !~ /$explicit_target/ && @{[$dst_glob =~ /$implicit_target/g]} > $pattern_count;
+
+# Construct the list of dst file/directory paths
 
 my @dst;
 for my $old (@src)
 {
 	my $new = $old;
-	print "$name: src_re = $src_re\n" if $debug;
-	print "$name: dst_re = $dst_re\n" if $debug;
-	eval "\$new =~ s|$src_re|$dst_re|;";
-	print "$name: src <$old>\n" if $debug;
-	print "$name: dst <$new>\n" if $debug;
+	eval "\$new =~ s$src_re$dst_re;";
+	die "$name: Failed to convert src @{[qu($old)]} from @{[qu($src_re)]} to @{[qu($dst_re)]}@{[$debug ? ': ' . $@ : '']}\n" if $@;
+	print "$name: src @{[qu($old)]}\n" if $debug;
+	print "$name: dst @{[qu($new)]}\n" if $debug;
 	push @dst, $new;
 }
 
 # Must be ultra paranoid but helpful
 
-my $help = "Use -n to check and then -f to force it iff you are certain";
+my $suggestion = 'Use -n to check and then -f to force it, if and only if you are certain';
 
-my %dst_chk;
+my %dst_seen;
 for (my $i = 0; $i < @dst; ++$i)
 {
-	die "$name: Aborting: Target $dst[$i] appears multiple times\n" if !$testing && !$force && exists $dst_chk{$dst[$i]};
-	$dst_chk{$dst[$i]} = $i;
+	die "$name: Aborting: dst @{[qu($dst[$i])]} appears multiple times\n" if !$testing && !$force && exists $dst_seen{$dst[$i]};
+	$dst_seen{$dst[$i]} = $i;
 }
 
 for (my $i = 0; $i < @src; ++$i)
 {
-	if (exists $dst_chk{$src[$i]})
+	if (exists $dst_seen{$src[$i]})
 	{
-		my $j = $dst_chk{$src[$i]};
+		my $j = $dst_seen{$src[$i]};
 
-		if ($i == $j)
-		{
-			print "$name: Skipping $src[$i]\n" unless $quiet;
-			splice @src, $i, 1;
-			splice @dst, $j, 1;
-			next;
-		}
-
-		die "$name: Aborting: Nervous about src[$i]: $src[$i] and dst[$j]: $dst[$j]\n$help\n"
+		print "$name: Skipping @{[qu($src[$i])]}\n" if $i == $j && !$quiet;
+		next if $i == $j;
+		die "$name: Aborting: Nervous about src @{[qu($src[$i])]} and dst @{[qu($dst[$j])]}\n$suggestion\n"
 			unless $testing || $force;
 	}
 }
 
 for (my $i = 0; $i < @dst; ++$i)
 {
-	die "$name: Aborting: $dst[$i] already exists\n$help\n"
-		if -e $dst[$i] && !$testing && !$force;
+	die "$name: Aborting: dst @{[qu($dst[$i])]} already exists\n$suggestion\n"
+		if -e $dst[$i] && $dst[$i] ne $src[$i] && !$testing && !$force;
 }
 
-# If testing, print out corresponding mv commands then exit
+# If testing, print the equivalent mv commands then exit
 
 if ($testing)
 {
 	for (my $i = 0; $i < @src; ++$i)
 	{
+		next if $dst[$i] eq $src[$i];
 		my $r = (-d $dst[$i]) ? 'r' : '';
-		print "rm -${r}f ", qu($dst[$i]), ' (if forced)', "\n" if -e $dst[$i];
-		print 'mv ', qu($src[$i]), ' ', qu($dst[$i]), "\n";
+		print "rm -${r}f @{[qu($dst[$i])]} (if forced)\n" if -e $dst[$i];
+		print "mv @{[qu($src[$i])]} @{[qu($dst[$i])]}\n";
 	}
 
 	exit;
 }
 
-# If forced, first unlink any existing destination files :[
+# If forced, first remove any existing destination files or directories
 
 if ($force)
 {
 	for (my $i = 0; $i < @src; ++$i)
 	{
+		next if $dst[$i] eq $src[$i];
+
 		if (-d $dst[$i])
 		{
-			print "$name: Removing directory $dst[$i]\n" unless $quiet;
-			rm($dst[$i]) or die "$name: Failed to remove directory $dst[$i]: $!\n";
-			-d $dst[$i] && die "$name: Failed to remove directory $dst[$i]: $!\n";
+			print "$name: Removing directory @{[qu($dst[$i])]}\n" unless $quiet;
+			rm($dst[$i]) or exit 1; # die "$name: Failed to remove existing directory @{[qu($dst[$i])]}: $!\n";
 		}
 		elsif (-e $dst[$i])
 		{
-			print "$name: Unlinking $dst[$i]\n" unless $quiet;
-			unlink $dst[$i] or die "$name: Failed to unlink $dst[$i]: $!\n";
+			print "$name: Removing @{[qu($dst[$i])]}\n" unless $quiet;
+			unlink $dst[$i] or die "$name: Failed to remove existing @{[qu($dst[$i])]}: $!\n";
 		}
 	}
 }
 
-# Try to move all of the files
+# Try to rename the files or directories
 
 my $i;
 for ($i = 0; $i < @src; ++$i)
 {
-	print "mv ", qu($src[$i]), ' ', qu($dst[$i]), "\n" if $verbose;
-
-	if (-d $src[$i])
-	{
-		rename $src[$i], $dst[$i] or warn("$name: Failed to rename $src[$i] $dst[$i]: $!\n"), last;
-	}
-	else
-	{
-		link $src[$i], $dst[$i] or warn("$name: Failed to link $src[$i] $dst[$i]: $!\n"), last;
-	}
+	next if $dst[$i] eq $src[$i];
+	print "mv @{[qu($src[$i])]} @{[qu($dst[$i])]}\n" if $verbose;
+	_rename($src[$i], $dst[$i]) or warn("$name: Failed to rename@{[(-d $src[$i]) ? ' directory' : '']} @{[qu($src[$i])]} to @{[qu($dst[$i])]}: $!\n"), last;
 }
 
-# If any failed, abandon and remove all destination files
+# If any failed, rename any destination files or directories back to their original names and abort
 
 if ($i != @src)
 {
-	warn("$name: Reverting changes\n") if $i;
+	warn("$name: Aborting: Undoing changes\n") if $i;
 
 	while (--$i >= 0)
 	{
-		print "mv ", qu($dst[$i]), ' ', qu($src[$i]), "\n" unless $quiet;
-
-		if (-d $dst[$i])
-		{
-			rename $dst[$i], $src[$i] or warn "$name: Failed to rename $dst[$i] $src[$i]: $!\n";
-		}
-		elsif (-e $dst[$i])
-		{
-			unlink $dst[$i] or warn "$name: Failed to unlink $dst[$i]: $!\n";
-		}
+		next if $dst[$i] eq $src[$i];
+		print "mv @{[qu($dst[$i])]} @{[qu($src[$i])]}\n" if $verbose;
+		_rename($dst[$i], $src[$i]) or warn "$name: Failed to rename@{[(-d $dst[$i]) ? ' directory' : '']} @{[qu($dst[$i])]} back to @{[qu($src[$i])]}: $!\n";
 	}
 
 	die "$name: Aborted\n";
 }
 
-# Otherwise, remove the originals
+# Wrapper for rename that can inject errors for testing
 
-unlink or warn "$name: Failed to unlink $_: $!\n" for grep { -e && ! -d } @src;
+my $_rename_count;
+sub _rename
+{
+	my ($src, $dst) = @_;
+	++$_rename_count;
+	$! = 0, return 0 if $start_failing_after > 0 && $stop_failing_after > 0 && $_rename_count > $start_failing_after && $_rename_count <= $start_failing_after + $stop_failing_after;
+	return rename($src, $dst);
+}
 
-# Quote the argument if it contains spaces or double quotes
+# Quote the argument if necessary
 
 sub qu
 {
 	my $s = shift;
-	# Return the string as is if it contains no spaces or quote characters
-	return $s unless $s =~ /[ '"]/;
-	# Quote with double quotes if it contains apostrophes (and backslash existing double quotes)
+	# Return the string as is if it contains no whitespace or quote characters
+	return $s unless $s =~ /[\s'"]/;
+	# Quote with double quotes if it contains single quotes (and backslash existing double quotes)
 	$s =~ s/"/\\"/g, return "\"$s\"" if $s =~ /'/;
 	# Quote with single quotes otherwise
 	return "'$s'";
 }
 
-# Removes the files and directories given as arguments, returns number removed
-# usage: my $unlinked = rm(@files);
+# Remove the files and directories given as arguments
+# Return 1 on success, 0 on failure
 
 sub rm
 {
-	my $rc = 0;
-	$rc += rm(glob "$_/*"), $rc += rmdir $_ for grep { -d } @_;
-	$rc += unlink grep { ! -d } @_;
-	return $rc;
+	unlink or warn("$name: Failed to remove existing @{[qu($_)]}: $!\n") for grep { -e && ! -d _ } @_;
+	rm(listdir($_)), rmdir($_) or warn("$name: Failed to remove existing directory @{[qu($_)]}: $!\n") for grep { -d } @_;
+	return 0 for grep { -e } @_;
+	return 1;
+}
+
+# Return the contents of a directory (except . and ..)
+
+sub listdir
+{
+	my $dir = shift;
+	opendir my $dh, $dir or warn("$name: Failed to opendir @{[qu($dir)]}: $!\n"), return;
+	my @contents = map { "$dir/$_" } sort grep { !/^\.\.?$/ } readdir $dh;
+	closedir $dh;
+	return @contents;
 }
 
 # vi:set ts=4 sw=4:

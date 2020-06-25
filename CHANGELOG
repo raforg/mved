@@ -1,0 +1,76 @@
+CHANGELOG
+=========
+
+3.0 (20200625)
+
+    - Fixed copyright messages (actual years of publication, not range of years)
+    - Replaced link/unlink with rename for file systems that can't do hard links
+    - Fixed bug: Removing directories when -f only worked if no dotfiles therein
+    - Always quote file/directory names in messages if needed (was inconsistent)
+    - Added self-identifying and legal information to the help message
+    - Added standard --help and --version command line options
+    - Added CHANGELOG, COPYING, INSTALL, LICENSE files
+    - Changed README to README.md
+    - Changed regular expression separator used from "|" to Ctrl-A
+    - Added rigorous tests (run-tests or make test or make check)
+    - Fixed bug when skipping (i.e. when dst and src are the same)
+    - Documented lack of support for [^] complement character classes
+    - Added very limited support for {,} multiple glob patterns
+    - Added checks for invalid use (e.g. too many dst patterns)
+    - Increased -b default from 4 to 16 (just in case / why not?)
+    - Added mved.1 to dist (for installation without pod2man)
+    - Fixed inability to handle Ctrl-A re separator in src and dst
+    - Quote all irrelevant perl regexp meta-characters
+    - Fixed manpage headers and footers
+    - Ensure Perl compatibility from Perl 5.6 to (probably) Perl 7
+    - Make pathological glob patterns fast when possible
+
+2.2 (20111027)
+
+    - Fixed bug: Removing directories when -f only worked if empty
+    - Added warning messages when failing to rename/link/unlink
+    - Made reverting after failure slightly faster
+    - Improved fatal/debug/verbose messages
+
+2.1 (20091105)
+
+    - Only put quotes around src glob when it contains a space
+
+2.0 (20080307)
+
+    - Put quotes around src glob to handle spaces
+    - Limit explicit =#= patterns to a single-digit
+    - Improved debug/verbose/testing messages
+
+1.1 (20060124)
+
+    - Added one-line program description to -h output
+    - Improved cleanup after pod2html
+    - Minor reformatting
+
+1.0 (20030901)
+
+    - Find perl via /usr/bin/env (not hard-coded)
+    - Added copyright notice
+    - Added -h option to print the help message
+    - Added -m option to print the manpage
+    - Added -w option to print the manpage as HTML
+    - Added -r option to print the manpage as nroff
+    - Use glob() instead of /bin/ls
+    - Check for and disallow "|" in patterns
+    - Added more debug messages
+    - Handle directories as well
+    - Added Makefile
+    - Added README
+
+0.1 (19970712)
+
+    - Initial version
+
+--------------------------------------------------------------------------------
+
+    URL: http://raf.org/mved
+    GIT: https://github.com/raforg/mved
+    Date: 20200625
+    Author: raf <raf@raf.org>
+
