@@ -5,8 +5,8 @@ There are no dependencies on any non-standard Perl modules.
 
 To install mved and its manpage (under /usr/local by default):
 
-    tar xzf mved-X.Y.tar.gz
-    cd mved-X.Y
+    tar xzf mved-3.0.tar.gz
+    cd mved-3.0
     make install
 
 To install under /usr:
@@ -43,6 +43,7 @@ Requires pod2html (comes with perl) to make the html manpage.
 
     URL: http://raf.org/mved
     GIT: https://github.com/raforg/mved
+    GIT: https://codeberg.org/raforg/mved
     Date: 20200625
     Author: raf <raf@raf.org>
 

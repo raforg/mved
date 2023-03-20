@@ -69,6 +69,7 @@ There is a manual entry:
 
     URL: http://raf.org/mved
     GIT: https://github.com/raforg/mved
+    GIT: https://codeberg.org/raforg/mved
     Date: 20200625
     Author: raf <raf@raf.org>
 

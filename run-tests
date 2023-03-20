@@ -1065,6 +1065,7 @@ test
 	"Author: raf <raf\@raf.org>\n" .
 	"URL: http://raf.org/mved/\n" .
 	"GIT: https://github.com/raforg/mved/\n" .
+	"GIT: https://codeberg.org/raforg/mved/\n" .
 	"\n" .
 	"Copyright (C) 1997, 2003, 2006, 2008-2009, 2011, 2020 raf <raf\@raf.org>\n" .
 	"\n" .
@@ -1122,6 +1123,7 @@ test
 	"Author: raf <raf\@raf.org>\n" .
 	"URL: http://raf.org/mved/\n" .
 	"GIT: https://github.com/raforg/mved/\n" .
+	"GIT: https://codeberg.org/raforg/mved/\n" .
 	"\n" .
 	"Copyright (C) 1997, 2003, 2006, 2008-2009, 2011, 2020 raf <raf\@raf.org>\n" .
 	"\n" .
