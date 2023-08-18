@@ -23,8 +23,8 @@ DIST := $(NAME)-$(VERSION)
 DISTDIR := ../$(DIST)
 DISTFILE := ../$(DIST).tar.gz
 
-# PREFIX := $(DESTDIR)/usr
-PREFIX := $(DESTDIR)/usr/local
+# PREFIX := /usr
+PREFIX := /usr/local
 BINDIR := $(PREFIX)/bin
 BINFILES := $(NAME)
 MANDIR := $(shell [ -d $(PREFIX)/share/man ] && echo $(PREFIX)/share/man/man1 || echo $(PREFIX)/man/man1)
@@ -32,9 +32,12 @@ MANFILES := $(NAME).1.gz
 HTMLFILES := $(NAME).1.html
 DISTFILES := README.md CHANGELOG COPYING INSTALL LICENSE Makefile $(BINFILES) $(MANFILES) $(HTMLFILES) run-tests
 
+DEST_BINDIR := $(DESTDIR)$(BINDIR)
+DEST_MANDIR := $(DESTDIR)$(MANDIR)
+
 INSTFILES := \
-	$(patsubst %, $(BINDIR)/%, $(BINFILES)) \
-	$(patsubst %, $(MANDIR)/%, $(MANFILES))
+	$(patsubst %, $(DEST_BINDIR)/%, $(BINFILES)) \
+	$(patsubst %, $(DEST_MANDIR)/%, $(MANFILES))
 
 help:
 	@echo "This Makefile supports the following targets:"; \
@@ -60,12 +63,12 @@ install: $(INSTFILES)
 uninstall:
 	rm -f $(INSTFILES)
 
-$(BINDIR)/%: %
-	[ -d $(BINDIR) ] || mkdir -m 755 -p $(BINDIR)
+$(DEST_BINDIR)/%: %
+	[ -d $(DEST_BINDIR) ] || mkdir -m 755 -p $(DEST_BINDIR)
 	install -m 755 $< $@
 
-$(MANDIR)/%: %
-	[ -d $(MANDIR) ] || mkdir -m 755 -p $(MANDIR)
+$(DEST_MANDIR)/%: %
+	[ -d $(DEST_MANDIR) ] || mkdir -m 755 -p $(DEST_MANDIR)
 	install -m 644 $< $@
 
 man: $(MANFILES)
